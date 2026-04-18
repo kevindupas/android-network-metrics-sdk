@@ -7,13 +7,17 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.google.android.gms.location.LocationServices
 import com.kevindupas.networkmetrics.core.ConfigHolder
+import com.kevindupas.networkmetrics.core.RemoteConfigFetcher
 import com.kevindupas.networkmetrics.measurement.DeviceMeasurement
+import com.kevindupas.networkmetrics.measurement.DnsMeasurement
+import com.kevindupas.networkmetrics.measurement.NeighboringCellsMeasurement
 import com.kevindupas.networkmetrics.measurement.NetworkContextMeasurement
 import com.kevindupas.networkmetrics.measurement.PacketLossMeasurement
 import com.kevindupas.networkmetrics.measurement.RadioMeasurement
 import com.kevindupas.networkmetrics.measurement.SocialLatencyMeasurement
 import com.kevindupas.networkmetrics.measurement.SpeedMeasurement
 import com.kevindupas.networkmetrics.measurement.StreamingMeasurement
+import com.kevindupas.networkmetrics.measurement.WebBrowsingMeasurement
 import com.kevindupas.networkmetrics.model.GeoResult
 import com.kevindupas.networkmetrics.model.NetworkMetricsRecord
 import com.kevindupas.networkmetrics.util.MosCalculator
@@ -60,17 +64,38 @@ internal class NetworkMetricsWorker(
         return try {
             val geo = getLastLocation()
 
-            val (speed, social, streaming) = coroutineScope {
-                val s  = if (config.enableSpeed) async {
-                SpeedMeasurement(
-                    downloadDurationMs = config.speedDownloadDurationMs,
-                    uploadDurationMs   = config.speedUploadDurationMs,
-                    threadCount        = config.speedThreadCount,
-                ).measure()
-            } else null
-                val sl = if (config.enableSocialLatency) async { SocialLatencyMeasurement().measure() } else null
-                val st = if (config.enableStreaming) async { StreamingMeasurement().measure() } else null
-                Triple(s?.await(), sl?.await() ?: emptyList(), st?.await())
+            val webTargets = if (config.enableWebBrowsing) {
+                if (config.remoteConfigUrl != null) {
+                    RemoteConfigFetcher.fetchWebTargets(config.remoteConfigUrl, config.authHeader, config.webTargets)
+                } else {
+                    config.webTargets
+                }
+            } else emptyList()
+
+            val speed: com.kevindupas.networkmetrics.model.SpeedResult?
+            val social: List<com.kevindupas.networkmetrics.model.SocialLatencyResult>
+            val streaming: com.kevindupas.networkmetrics.model.StreamingResult?
+            val dns: com.kevindupas.networkmetrics.model.DnsResult?
+            val webBrowsing: List<com.kevindupas.networkmetrics.model.WebBrowsingResult>
+            coroutineScope {
+                val sD  = if (config.enableSpeed) async {
+                    SpeedMeasurement(
+                        downloadDurationMs = config.speedDownloadDurationMs,
+                        uploadDurationMs   = config.speedUploadDurationMs,
+                        threadCount        = config.speedThreadCount,
+                    ).measure()
+                } else null
+                val slD = if (config.enableSocialLatency) async { SocialLatencyMeasurement().measure() } else null
+                val stD = if (config.enableStreaming) async { StreamingMeasurement().measure() } else null
+                val dnD = if (config.enableDns) async { DnsMeasurement().measure() } else null
+                val wbD = if (config.enableWebBrowsing && webTargets.isNotEmpty()) async {
+                    WebBrowsingMeasurement(webTargets).measure()
+                } else null
+                speed       = sD?.await()
+                social      = slD?.await() ?: emptyList()
+                streaming   = stD?.await()
+                dns         = dnD?.await()
+                webBrowsing = wbD?.await() ?: emptyList()
             }
 
             val udp = if (config.enablePacketLoss && config.udpHost.isNotBlank()) {
@@ -78,6 +103,9 @@ internal class NetworkMetricsWorker(
             } else null
 
             val radio   = RadioMeasurement(appContext).measure()
+            val neighboring = if (config.enableNeighboringCells && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                NeighboringCellsMeasurement(appContext).measure()
+            } else emptyList()
             val network = NetworkContextMeasurement().measure()
             val device  = DeviceMeasurement(appContext).measure()
 
@@ -101,6 +129,9 @@ internal class NetworkMetricsWorker(
                 device = device,
                 scores = scores,
                 mos = mos,
+                dns = dns,
+                webBrowsing = webBrowsing,
+                neighboringCells = neighboring,
             )
 
             postRecord(record, config.backendUrl, config.authHeader)
@@ -177,7 +208,9 @@ internal class NetworkMetricsWorker(
             put("cqi", ra.cqi); put("ci", ra.ci); put("pci", ra.pci)
             put("tac", ra.tac); put("lac", ra.lac); put("earfcn", ra.earfcn)
             put("bandwidth", ra.bandwidth); put("psc", ra.psc)
-            put("isNrAvailable", ra.isNrAvailable); put("networkGeneration", ra.networkGeneration)
+            put("isNrAvailable", ra.isNrAvailable); put("isRoaming", ra.isRoaming)
+            put("nrMode", ra.nrMode)
+            put("networkGeneration", ra.networkGeneration)
             put("signalStrengthLevel", ra.signalStrengthLevel); put("technology", ra.technology)
         }})
         put("network", JSONObject().apply {
@@ -200,6 +233,7 @@ internal class NetworkMetricsWorker(
             put("mcc", r.device.mcc); put("mnc", r.device.mnc)
             put("batteryLevel", r.device.batteryLevel); put("isCharging", r.device.isCharging)
             put("ramUsedMb", r.device.ramUsedMb); put("cpuLoadPercent", r.device.cpuLoadPercent)
+            put("thermalStatus", r.device.thermalStatus)
         })
         put("scores", r.scores?.let { sc -> JSONObject().apply {
             put("streaming", sc.streaming?.let { JSONObject().apply { put("score", it.score); put("label", it.label) }})
@@ -207,6 +241,23 @@ internal class NetworkMetricsWorker(
             put("rtc",       sc.rtc?.let       { JSONObject().apply { put("score", it.score); put("label", it.label) }})
         }})
         put("mos", r.mos)
+        put("dns", r.dns?.let { d -> JSONObject().apply {
+            put("resolveMs", d.resolveMs); put("host", d.host)
+            put("resolvedIps", JSONArray(d.resolvedIps)); put("success", d.success)
+        }})
+        put("webBrowsing", JSONArray(r.webBrowsing.map { wb -> JSONObject().apply {
+            put("name", wb.name); put("url", wb.url)
+            put("dnsMs", wb.dnsMs); put("tcpMs", wb.tcpMs)
+            put("tlsMs", wb.tlsMs); put("ttfbMs", wb.ttfbMs)
+            put("totalMs", wb.totalMs); put("httpStatus", wb.httpStatus)
+            put("success", wb.success); put("error", wb.error)
+        }}))
+        put("neighboringCells", JSONArray(r.neighboringCells.map { nc -> JSONObject().apply {
+            put("type", nc.type); put("pci", nc.pci); put("ci", nc.ci)
+            put("rsrp", nc.rsrp); put("rsrq", nc.rsrq); put("rssi", nc.rssi)
+            put("tac", nc.tac); put("lac", nc.lac); put("earfcn", nc.earfcn)
+            put("isRegistered", nc.isRegistered)
+        }}))
     }
 
     private fun iso8601(): String =

@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Debug
+import android.os.PowerManager
 import android.telephony.TelephonyManager
 import com.kevindupas.networkmetrics.model.DeviceResult
 
@@ -52,6 +53,20 @@ internal class DeviceMeasurement(private val context: Context) {
             if (total > 0) ((total - idle) * 100.0 / total) else null
         } catch (_: Exception) { null }
 
+        val thermalStatus = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            when (pm.currentThermalStatus) {
+                PowerManager.THERMAL_STATUS_NONE -> "NONE"
+                PowerManager.THERMAL_STATUS_LIGHT -> "LIGHT"
+                PowerManager.THERMAL_STATUS_MODERATE -> "MODERATE"
+                PowerManager.THERMAL_STATUS_SEVERE -> "SEVERE"
+                PowerManager.THERMAL_STATUS_CRITICAL -> "CRITICAL"
+                PowerManager.THERMAL_STATUS_EMERGENCY -> "EMERGENCY"
+                PowerManager.THERMAL_STATUS_SHUTDOWN -> "SHUTDOWN"
+                else -> null
+            }
+        } else null
+
         return DeviceResult(
             manufacturer = Build.MANUFACTURER,
             model = Build.MODEL,
@@ -64,6 +79,7 @@ internal class DeviceMeasurement(private val context: Context) {
             isCharging = isCharging,
             ramUsedMb = ramUsedMb,
             cpuLoadPercent = cpuLoadPercent,
+            thermalStatus = thermalStatus,
         )
     }
 

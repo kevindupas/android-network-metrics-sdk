@@ -36,15 +36,16 @@ internal class RadioMeasurement(private val context: Context) {
 
         val signalLevel = signalStrengthLabel(tm.signalStrength)
         val networkGen = detectNetworkGeneration(tm)
+        val isRoaming = try { tm.isNetworkRoaming } catch (_: Exception) { false }
 
         if (!hasPermissions()) {
-            return emptyResult(networkGen, signalLevel, connectionType)
+            return emptyResult(networkGen, signalLevel, connectionType, isRoaming = isRoaming)
         }
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            buildFromCellInfo(tm, networkGen, signalLevel, connectionType)
+            buildFromCellInfo(tm, networkGen, signalLevel, connectionType, isRoaming)
         } else {
-            emptyResult(networkGen, signalLevel, connectionType)
+            emptyResult(networkGen, signalLevel, connectionType, isRoaming = isRoaming)
         }
     }
 
@@ -55,9 +56,11 @@ internal class RadioMeasurement(private val context: Context) {
         networkGen: String,
         signalLevel: String,
         tech: String,
+        isRoaming: Boolean,
     ): RadioResult {
         val cells = try { tm.allCellInfo } catch (_: Exception) { emptyList() }
-        val isNr = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) is5GNsa(tm) else false
+        val nrMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) detect5GMode(tm) else null
+        val isNr = nrMode != null
 
         for (cell in cells) {
             if (!cell.isRegistered) continue
@@ -77,11 +80,13 @@ internal class RadioMeasurement(private val context: Context) {
                         ci = id.ci.toLong().takeUnless { it == CellInfo.UNAVAILABLE.toLong() },
                         pci = id.pci.takeUnless { it == CellInfo.UNAVAILABLE },
                         tac = id.tac.takeUnless { it == CellInfo.UNAVAILABLE },
-                        lac = null, // LTE doesn't use LAC
+                        lac = null,
                         earfcn = id.earfcn.takeUnless { it == CellInfo.UNAVAILABLE },
                         bandwidth = bw,
                         psc = null,
                         isNrAvailable = isNr,
+                        isRoaming = isRoaming,
+                        nrMode = nrMode,
                         networkGeneration = networkGen,
                         signalStrengthLevel = signalLevel,
                         technology = tech,
@@ -104,6 +109,8 @@ internal class RadioMeasurement(private val context: Context) {
                         bandwidth = null,
                         psc = null,
                         isNrAvailable = true,
+                        isRoaming = isRoaming,
+                        nrMode = "SA",
                         networkGeneration = networkGen,
                         signalStrengthLevel = signalLevel,
                         technology = tech,
@@ -123,6 +130,8 @@ internal class RadioMeasurement(private val context: Context) {
                         bandwidth = null,
                         psc = id.psc.takeUnless { it == CellInfo.UNAVAILABLE },
                         isNrAvailable = false,
+                        isRoaming = isRoaming,
+                        nrMode = null,
                         networkGeneration = networkGen,
                         signalStrengthLevel = signalLevel,
                         technology = tech,
@@ -142,6 +151,8 @@ internal class RadioMeasurement(private val context: Context) {
                         bandwidth = null,
                         psc = null,
                         isNrAvailable = false,
+                        isRoaming = isRoaming,
+                        nrMode = null,
                         networkGeneration = networkGen,
                         signalStrengthLevel = signalLevel,
                         technology = tech,
@@ -150,32 +161,42 @@ internal class RadioMeasurement(private val context: Context) {
             }
         }
 
-        return emptyResult(networkGen, signalLevel, tech, isNr)
+        return emptyResult(networkGen, signalLevel, tech, isNr, isRoaming, nrMode)
     }
 
     private fun emptyResult(
-        networkGen: String, signalLevel: String, tech: String, isNr: Boolean = false,
+        networkGen: String, signalLevel: String, tech: String,
+        isNr: Boolean = false, isRoaming: Boolean = false, nrMode: String? = null,
     ) = RadioResult(
         rsrp = null, rsrq = null, sinr = null, rssi = null, cqi = null,
         ci = null, pci = null, tac = null, lac = null,
         earfcn = null, bandwidth = null, psc = null,
         isNrAvailable = isNr,
+        isRoaming = isRoaming,
+        nrMode = nrMode,
         networkGeneration = networkGen,
         signalStrengthLevel = signalLevel,
         technology = tech,
     )
 
     @RequiresApi(Build.VERSION_CODES.R)
-    private fun is5GNsa(tm: TelephonyManager): Boolean {
+    private fun detect5GMode(tm: TelephonyManager): String? {
         return try {
-            val result = booleanArrayOf(false)
+            val result = arrayOfNulls<String>(1)
             val lock = Object()
             val cb = object : TelephonyCallback(), TelephonyCallback.DisplayInfoListener {
                 override fun onDisplayInfoChanged(info: TelephonyDisplayInfo) {
-                    val ov = info.overrideNetworkType
-                    result[0] = ov == TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA ||
-                            ov == TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA_MMWAVE ||
-                            ov == TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_ADVANCED
+                    result[0] = when (info.overrideNetworkType) {
+                        TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA,
+                        TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA_MMWAVE,
+                        TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_ADVANCED -> "NSA"
+                        else -> null
+                    }
+                    // SA 5G shows as NETWORK_TYPE_NR in dataNetworkType with no override
+                    if (result[0] == null && info.networkType == TelephonyManager.NETWORK_TYPE_NR
+                        && info.overrideNetworkType == TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NONE) {
+                        result[0] = "SA"
+                    }
                     synchronized(lock) { lock.notifyAll() }
                 }
             }
@@ -183,7 +204,7 @@ internal class RadioMeasurement(private val context: Context) {
             synchronized(lock) { lock.wait(600) }
             tm.unregisterTelephonyCallback(cb)
             result[0]
-        } catch (_: Exception) { false }
+        } catch (_: Exception) { null }
     }
 
     @SuppressLint("MissingPermission")
@@ -194,7 +215,7 @@ internal class RadioMeasurement(private val context: Context) {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.N -> {
                 when (tm.dataNetworkType) {
                     TelephonyManager.NETWORK_TYPE_NR -> "5G"
-                    TelephonyManager.NETWORK_TYPE_LTE -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && is5GNsa(tm)) "5G" else "4G"
+                    TelephonyManager.NETWORK_TYPE_LTE -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && detect5GMode(tm) != null) "5G" else "4G"
                     TelephonyManager.NETWORK_TYPE_UMTS,
                     TelephonyManager.NETWORK_TYPE_HSDPA,
                     TelephonyManager.NETWORK_TYPE_HSUPA,

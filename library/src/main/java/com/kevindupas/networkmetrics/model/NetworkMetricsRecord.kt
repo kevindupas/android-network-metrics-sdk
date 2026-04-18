@@ -18,6 +18,9 @@ data class NetworkMetricsRecord(
     val device: DeviceResult,
     val scores: QualityScores?,
     val mos: Double?,
+    val dns: DnsResult?,
+    val webBrowsing: List<WebBrowsingResult>,
+    val neighboringCells: List<NeighboringCellResult>,
 )
 
 data class SpeedResult(
@@ -67,6 +70,8 @@ data class RadioResult(
     val bandwidth: Int?, // LTE channel bandwidth in kHz (e.g. 20000 = 20 MHz)
     val psc: Int?,       // WCDMA Primary Scrambling Code
     val isNrAvailable: Boolean,
+    val isRoaming: Boolean,
+    val nrMode: String?, // "NSA" | "SA" | null
     val networkGeneration: String,
     val signalStrengthLevel: String,
     val technology: String,
@@ -108,6 +113,7 @@ data class DeviceResult(
     val isCharging: Boolean?,
     val ramUsedMb: Int?,
     val cpuLoadPercent: Double?,
+    val thermalStatus: String?, // NONE | LIGHT | MODERATE | SEVERE | CRITICAL | EMERGENCY | SHUTDOWN
 )
 
 data class QualityScores(
@@ -119,4 +125,37 @@ data class QualityScores(
 data class ScoreEntry(
     val score: Int,
     val label: String,
+)
+
+data class DnsResult(
+    val resolveMs: Long,
+    val host: String,
+    val resolvedIps: List<String>,
+    val success: Boolean,
+)
+
+data class WebBrowsingResult(
+    val name: String,
+    val url: String,
+    val dnsMs: Long?,
+    val tcpMs: Long?,
+    val tlsMs: Long?,
+    val ttfbMs: Long?,
+    val totalMs: Long?,
+    val httpStatus: Int?,
+    val success: Boolean,
+    val error: String?,
+)
+
+data class NeighboringCellResult(
+    val type: String,       // "LTE" | "NR" | "WCDMA" | "GSM"
+    val pci: Int?,
+    val ci: Long?,
+    val rsrp: Int?,
+    val rsrq: Int?,
+    val rssi: Int?,
+    val tac: Int?,
+    val lac: Int?,
+    val earfcn: Int?,
+    val isRegistered: Boolean,
 )

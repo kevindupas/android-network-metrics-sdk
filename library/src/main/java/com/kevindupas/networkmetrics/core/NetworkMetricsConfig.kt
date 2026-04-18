@@ -1,5 +1,7 @@
 package com.kevindupas.networkmetrics.core
 
+import com.kevindupas.networkmetrics.measurement.WebTarget
+
 data class NetworkMetricsConfig(
     // Required
     val backendUrl: String,
@@ -17,11 +19,27 @@ data class NetworkMetricsConfig(
     val enablePacketLoss: Boolean = true,
     val enableStreaming: Boolean = true,
     val enableSocialLatency: Boolean = true,
+    val enableDns: Boolean = true,
+    val enableWebBrowsing: Boolean = true,
+    val enableNeighboringCells: Boolean = true,
 
     // Speed test tuning — reduce for metered/prepaid networks
-    val speedDownloadDurationMs: Long = 8_000L,   // download window
-    val speedUploadDurationMs: Long = 6_000L,     // upload window
-    val speedThreadCount: Int = 3,                // parallel streams
+    val speedDownloadDurationMs: Long = 8_000L,
+    val speedUploadDurationMs: Long = 6_000L,
+    val speedThreadCount: Int = 3,
+
+    // Web browsing targets — override via remoteConfigUrl or set directly
+    // Default targets cover common global services (regulators can override per country)
+    val webTargets: List<WebTarget> = listOf(
+        WebTarget("Google", "https://www.google.com/"),
+        WebTarget("WhatsApp", "https://web.whatsapp.com/"),
+        WebTarget("YouTube", "https://www.youtube.com/"),
+        WebTarget("Facebook", "https://www.facebook.com/"),
+    ),
+
+    // Remote config — if set, SDK fetches targets JSON from this URL each cycle (cached 1h)
+    // Expected format: { "targets": [{ "name": "...", "url": "..." }] }
+    val remoteConfigUrl: String? = null,
 
     // Notification (kept for API compatibility — unused since WorkManager migration)
     val notificationTitle: String = "Network Metrics",
