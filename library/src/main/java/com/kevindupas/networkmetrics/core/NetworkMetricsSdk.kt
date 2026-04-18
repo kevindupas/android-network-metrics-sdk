@@ -1,57 +1,57 @@
 package com.kevindupas.networkmetrics.core
 
 import android.content.Context
-import android.content.Intent
-import android.os.Build
-import com.kevindupas.networkmetrics.service.NetworkMetricsService
+import android.util.Log
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import com.kevindupas.networkmetrics.service.NetworkMetricsWorker
+import java.util.concurrent.TimeUnit
 
-/**
- * Entry point for the Network Metrics SDK.
- *
- * Usage:
- * ```kotlin
- * NetworkMetricsSdk.init(context, NetworkMetricsConfig(backendUrl = "https://your-backend/metrics"))
- * NetworkMetricsSdk.start(context)
- * ```
- */
+private const val TAG = "NetworkMetricsSdk"
+private const val WORK_NAME = "network_metrics_periodic"
+
 object NetworkMetricsSdk {
 
     private var config: NetworkMetricsConfig? = null
 
-    /**
-     * Initialise the SDK with a configuration. Must be called before [start].
-     * Safe to call multiple times — subsequent calls update the configuration.
-     */
     fun init(context: Context, config: NetworkMetricsConfig) {
         this.config = config
         ConfigHolder.config = config
     }
 
-    /**
-     * Start the background measurement service.
-     * The service runs as a ForegroundService and survives app termination.
-     * Requires FOREGROUND_SERVICE and location permissions to be granted before calling.
-     */
     fun start(context: Context) {
-        checkNotNull(config) { "NetworkMetricsSdk.init() must be called before start()" }
-        val intent = Intent(context, NetworkMetricsService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(intent)
-        } else {
-            context.startService(intent)
-        }
+        val cfg = checkNotNull(config) { "NetworkMetricsSdk.init() must be called before start()" }
+
+        // WorkManager minimum is 15 minutes — OS enforced
+        val intervalMinutes = (cfg.intervalMs / 60_000L).coerceAtLeast(15)
+
+        val request = PeriodicWorkRequestBuilder<NetworkMetricsWorker>(
+            intervalMinutes, TimeUnit.MINUTES
+        )
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            WORK_NAME,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            request,
+        )
+
+        Log.d(TAG, "Scheduled every $intervalMinutes min (invisible, no notification)")
     }
 
-    /**
-     * Stop the background measurement service.
-     */
     fun stop(context: Context) {
-        context.stopService(Intent(context, NetworkMetricsService::class.java))
+        WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+        Log.d(TAG, "SDK stopped")
     }
 
-    /**
-     * Returns true if the service is currently configured and running.
-     */
     fun isInitialised(): Boolean = config != null
 }
 
