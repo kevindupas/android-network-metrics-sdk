@@ -175,7 +175,8 @@ internal class NetworkMetricsWorker(
         put("radio", r.radio?.let { ra -> JSONObject().apply {
             put("rsrp", ra.rsrp); put("rsrq", ra.rsrq); put("sinr", ra.sinr); put("rssi", ra.rssi)
             put("cqi", ra.cqi); put("ci", ra.ci); put("pci", ra.pci)
-            put("tac", ra.tac); put("earfcn", ra.earfcn)
+            put("tac", ra.tac); put("lac", ra.lac); put("earfcn", ra.earfcn)
+            put("bandwidth", ra.bandwidth); put("psc", ra.psc)
             put("isNrAvailable", ra.isNrAvailable); put("networkGeneration", ra.networkGeneration)
             put("signalStrengthLevel", ra.signalStrengthLevel); put("technology", ra.technology)
         }})
@@ -198,6 +199,7 @@ internal class NetworkMetricsWorker(
             put("simOperatorName", r.device.simOperatorName)
             put("mcc", r.device.mcc); put("mnc", r.device.mnc)
             put("batteryLevel", r.device.batteryLevel); put("isCharging", r.device.isCharging)
+            put("ramUsedMb", r.device.ramUsedMb); put("cpuLoadPercent", r.device.cpuLoadPercent)
         })
         put("scores", r.scores?.let { sc -> JSONObject().apply {
             put("streaming", sc.streaming?.let { JSONObject().apply { put("score", it.score); put("label", it.label) }})

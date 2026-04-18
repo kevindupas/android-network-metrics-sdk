@@ -4,14 +4,15 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.net.ConnectivityManager
 import android.os.Build
+import android.telephony.CellIdentityGsm
 import android.telephony.CellIdentityLte
 import android.telephony.CellIdentityNr
 import android.telephony.CellIdentityWcdma
 import android.telephony.CellInfo
+import android.telephony.CellInfoGsm
 import android.telephony.CellInfoLte
 import android.telephony.CellInfoNr
 import android.telephony.CellInfoWcdma
-import android.telephony.CellSignalStrengthLte
 import android.telephony.CellSignalStrengthNr
 import android.telephony.SignalStrength
 import android.telephony.TelephonyCallback
@@ -28,8 +29,8 @@ internal class RadioMeasurement(private val context: Context) {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
         val connectionType = when {
-            cm.activeNetworkInfo?.type == android.net.ConnectivityManager.TYPE_WIFI -> "WiFi"
-            cm.activeNetworkInfo?.type == android.net.ConnectivityManager.TYPE_MOBILE -> "cellular"
+            cm.activeNetworkInfo?.type == ConnectivityManager.TYPE_WIFI -> "WiFi"
+            cm.activeNetworkInfo?.type == ConnectivityManager.TYPE_MOBILE -> "cellular"
             else -> "none"
         }
 
@@ -37,27 +38,13 @@ internal class RadioMeasurement(private val context: Context) {
         val networkGen = detectNetworkGeneration(tm)
 
         if (!hasPermissions()) {
-            return RadioResult(
-                rsrp = null, rsrq = null, sinr = null, rssi = null, cqi = null,
-                ci = null, pci = null, tac = null, earfcn = null,
-                isNrAvailable = false,
-                networkGeneration = networkGen,
-                signalStrengthLevel = signalLevel,
-                technology = connectionType,
-            )
+            return emptyResult(networkGen, signalLevel, connectionType)
         }
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             buildFromCellInfo(tm, networkGen, signalLevel, connectionType)
         } else {
-            RadioResult(
-                rsrp = null, rsrq = null, sinr = null, rssi = null, cqi = null,
-                ci = null, pci = null, tac = null, earfcn = null,
-                isNrAvailable = false,
-                networkGeneration = networkGen,
-                signalStrengthLevel = signalLevel,
-                technology = connectionType,
-            )
+            emptyResult(networkGen, signalLevel, connectionType)
         }
     }
 
@@ -78,7 +65,9 @@ internal class RadioMeasurement(private val context: Context) {
             when (cell) {
                 is CellInfoLte -> {
                     val sig = cell.cellSignalStrength
-                    val id = cell.cellIdentity
+                    val id: CellIdentityLte = cell.cellIdentity
+                    val bw = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                        id.bandwidth.takeUnless { it == CellInfo.UNAVAILABLE } else null
                     return RadioResult(
                         rsrp = sig.rsrp.takeUnless { it == CellInfo.UNAVAILABLE },
                         rsrq = sig.rsrq.takeUnless { it == CellInfo.UNAVAILABLE },
@@ -88,7 +77,10 @@ internal class RadioMeasurement(private val context: Context) {
                         ci = id.ci.toLong().takeUnless { it == CellInfo.UNAVAILABLE.toLong() },
                         pci = id.pci.takeUnless { it == CellInfo.UNAVAILABLE },
                         tac = id.tac.takeUnless { it == CellInfo.UNAVAILABLE },
+                        lac = null, // LTE doesn't use LAC
                         earfcn = id.earfcn.takeUnless { it == CellInfo.UNAVAILABLE },
+                        bandwidth = bw,
+                        psc = null,
                         isNrAvailable = isNr,
                         networkGeneration = networkGen,
                         signalStrengthLevel = signalLevel,
@@ -107,7 +99,10 @@ internal class RadioMeasurement(private val context: Context) {
                         ci = id.nci.takeUnless { it == CellInfo.UNAVAILABLE_LONG },
                         pci = id.pci.takeUnless { it == CellInfo.UNAVAILABLE },
                         tac = id.tac.takeUnless { it == CellInfo.UNAVAILABLE },
+                        lac = null,
                         earfcn = id.nrarfcn.takeUnless { it == CellInfo.UNAVAILABLE },
+                        bandwidth = null,
+                        psc = null,
                         isNrAvailable = true,
                         networkGeneration = networkGen,
                         signalStrengthLevel = signalLevel,
@@ -115,7 +110,7 @@ internal class RadioMeasurement(private val context: Context) {
                     )
                 }
                 is CellInfoWcdma -> {
-                    val id = cell.cellIdentity
+                    val id: CellIdentityWcdma = cell.cellIdentity
                     return RadioResult(
                         rsrp = null, rsrq = null, sinr = null,
                         rssi = cell.cellSignalStrength.dbm.takeUnless { it == CellInfo.UNAVAILABLE },
@@ -123,7 +118,29 @@ internal class RadioMeasurement(private val context: Context) {
                         ci = id.cid.toLong().takeUnless { it == CellInfo.UNAVAILABLE.toLong() },
                         pci = null,
                         tac = null,
+                        lac = id.lac.takeUnless { it == CellInfo.UNAVAILABLE },
                         earfcn = id.uarfcn.takeUnless { it == CellInfo.UNAVAILABLE },
+                        bandwidth = null,
+                        psc = id.psc.takeUnless { it == CellInfo.UNAVAILABLE },
+                        isNrAvailable = false,
+                        networkGeneration = networkGen,
+                        signalStrengthLevel = signalLevel,
+                        technology = tech,
+                    )
+                }
+                is CellInfoGsm -> {
+                    val id: CellIdentityGsm = cell.cellIdentity
+                    return RadioResult(
+                        rsrp = null, rsrq = null, sinr = null,
+                        rssi = cell.cellSignalStrength.dbm.takeUnless { it == CellInfo.UNAVAILABLE },
+                        cqi = null,
+                        ci = id.cid.toLong().takeUnless { it == CellInfo.UNAVAILABLE.toLong() },
+                        pci = null,
+                        tac = null,
+                        lac = id.lac.takeUnless { it == CellInfo.UNAVAILABLE },
+                        earfcn = id.arfcn.takeUnless { it == CellInfo.UNAVAILABLE },
+                        bandwidth = null,
+                        psc = null,
                         isNrAvailable = false,
                         networkGeneration = networkGen,
                         signalStrengthLevel = signalLevel,
@@ -133,15 +150,20 @@ internal class RadioMeasurement(private val context: Context) {
             }
         }
 
-        return RadioResult(
-            rsrp = null, rsrq = null, sinr = null, rssi = null, cqi = null,
-            ci = null, pci = null, tac = null, earfcn = null,
-            isNrAvailable = isNr,
-            networkGeneration = networkGen,
-            signalStrengthLevel = signalLevel,
-            technology = tech,
-        )
+        return emptyResult(networkGen, signalLevel, tech, isNr)
     }
+
+    private fun emptyResult(
+        networkGen: String, signalLevel: String, tech: String, isNr: Boolean = false,
+    ) = RadioResult(
+        rsrp = null, rsrq = null, sinr = null, rssi = null, cqi = null,
+        ci = null, pci = null, tac = null, lac = null,
+        earfcn = null, bandwidth = null, psc = null,
+        isNrAvailable = isNr,
+        networkGeneration = networkGen,
+        signalStrengthLevel = signalLevel,
+        technology = tech,
+    )
 
     @RequiresApi(Build.VERSION_CODES.R)
     private fun is5GNsa(tm: TelephonyManager): Boolean {
@@ -166,9 +188,9 @@ internal class RadioMeasurement(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     private fun detectNetworkGeneration(tm: TelephonyManager): String {
-        val ni = try { context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager } catch (_: Exception) { return "Unknown" }
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         return when {
-            ni.activeNetworkInfo?.type == android.net.ConnectivityManager.TYPE_WIFI -> "WiFi"
+            cm.activeNetworkInfo?.type == ConnectivityManager.TYPE_WIFI -> "WiFi"
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.N -> {
                 when (tm.dataNetworkType) {
                     TelephonyManager.NETWORK_TYPE_NR -> "5G"
@@ -190,11 +212,7 @@ internal class RadioMeasurement(private val context: Context) {
     private fun signalStrengthLabel(ss: SignalStrength?): String {
         if (ss == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return "UNKNOWN"
         return when (ss.level) {
-            0 -> "NONE"
-            1 -> "POOR"
-            2 -> "MODERATE"
-            3 -> "GOOD"
-            4 -> "GREAT"
+            0 -> "NONE"; 1 -> "POOR"; 2 -> "MODERATE"; 3 -> "GOOD"; 4 -> "GREAT"
             else -> "UNKNOWN"
         }
     }

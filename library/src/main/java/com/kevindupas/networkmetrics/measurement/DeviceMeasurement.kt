@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Build
+import android.os.Debug
 import android.telephony.TelephonyManager
 import com.kevindupas.networkmetrics.model.DeviceResult
 
@@ -38,6 +39,19 @@ internal class DeviceMeasurement(private val context: Context) {
             status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
         }
 
+        val memInfo = Debug.MemoryInfo()
+        Debug.getMemoryInfo(memInfo)
+        val ramUsedMb = (memInfo.totalPss / 1024).takeIf { it > 0 }
+
+        val cpuLoadPercent = try {
+            val statBefore = readCpuStat()
+            Thread.sleep(200)
+            val statAfter = readCpuStat()
+            val total = statAfter.first - statBefore.first
+            val idle  = statAfter.second - statBefore.second
+            if (total > 0) ((total - idle) * 100.0 / total) else null
+        } catch (_: Exception) { null }
+
         return DeviceResult(
             manufacturer = Build.MANUFACTURER,
             model = Build.MODEL,
@@ -48,6 +62,16 @@ internal class DeviceMeasurement(private val context: Context) {
             mnc = mnc,
             batteryLevel = batteryLevel,
             isCharging = isCharging,
+            ramUsedMb = ramUsedMb,
+            cpuLoadPercent = cpuLoadPercent,
         )
+    }
+
+    private fun readCpuStat(): Pair<Long, Long> {
+        val line = java.io.File("/proc/stat").bufferedReader().readLine() ?: return Pair(0L, 0L)
+        val vals = line.trim().split("\\s+".toRegex()).drop(1).map { it.toLongOrNull() ?: 0L }
+        val total = vals.sum()
+        val idle  = vals.getOrElse(3) { 0L }
+        return Pair(total, idle)
     }
 }

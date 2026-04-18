@@ -62,7 +62,10 @@ data class RadioResult(
     val ci: Long?,
     val pci: Int?,
     val tac: Int?,
-    val earfcn: Int?,
+    val lac: Int?,       // GSM/WCDMA Location Area Code
+    val earfcn: Int?,    // LTE EARFCN / NR NR-ARFCN / WCDMA UARFCN
+    val bandwidth: Int?, // LTE channel bandwidth in kHz (e.g. 20000 = 20 MHz)
+    val psc: Int?,       // WCDMA Primary Scrambling Code
     val isNrAvailable: Boolean,
     val networkGeneration: String,
     val signalStrengthLevel: String,
@@ -103,6 +106,8 @@ data class DeviceResult(
     val mnc: String?,
     val batteryLevel: Int?,
     val isCharging: Boolean?,
+    val ramUsedMb: Int?,
+    val cpuLoadPercent: Double?,
 )
 
 data class QualityScores(
