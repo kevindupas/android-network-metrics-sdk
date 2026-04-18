@@ -52,7 +52,7 @@ Add the dependency to your module `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("com.github.kevindupas:android-network-metrics-sdk:1.0.0")
+    implementation("com.github.kevindupas:android-network-metrics-sdk:1.0.1")
 }
 ```
 
@@ -62,7 +62,7 @@ Download `library-release.aar` from the [latest release](https://github.com/kevi
 
 ```kotlin
 dependencies {
-    implementation(files("libs/network-metrics-sdk-1.0.0.aar"))
+    implementation(files("libs/network-metrics-sdk-1.0.1.aar"))
     // Required transitive dependencies
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.android.gms:play-services-location:21.3.0")
