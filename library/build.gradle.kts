@@ -10,7 +10,6 @@ android {
 
     defaultConfig {
         minSdk = 26
-        version = "1.0.0"
         consumerProguardFiles("consumer-rules.pro")
     }
 
@@ -62,7 +61,7 @@ publishing {
         register<MavenPublication>("release") {
             groupId = "com.kevindupas"
             artifactId = "network-metrics-sdk"
-            version = "1.0.0"
+            version = (System.getenv("GITHUB_REF_NAME") ?: "1.0.1").removePrefix("v")
 
             afterEvaluate {
                 from(components["release"])
