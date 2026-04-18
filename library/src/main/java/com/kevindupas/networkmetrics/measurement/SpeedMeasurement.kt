@@ -15,18 +15,15 @@ import kotlin.math.max
 
 private const val TAG = "SpeedMeasurement"
 private const val CF_BASE = "https://speed.cloudflare.com"
-
-// Duration-based measurement — works on 3G (500ms+), 4G, 5G, WiFi
 private const val PING_COUNT = 8
-private const val DOWNLOAD_DURATION_MS = 8_000L  // 8s window
-private const val UPLOAD_DURATION_MS = 6_000L    // 6s window
-private const val THREAD_COUNT = 3               // 3 parallel streams
-
-// Chunk sizes — start small, re-request in loop until window closes
 private const val DL_CHUNK_BYTES = 1 * 1024 * 1024  // 1 MB per request (3G-friendly)
 private const val UL_CHUNK_BYTES = 256 * 1024        // 256 KB per request (3G-friendly)
 
-internal class SpeedMeasurement {
+internal class SpeedMeasurement(
+    private val downloadDurationMs: Long = 8_000L,
+    private val uploadDurationMs: Long = 6_000L,
+    private val threadCount: Int = 3,
+) {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -41,11 +38,11 @@ internal class SpeedMeasurement {
             val (latencyMs, jitterMs) = measureLatencyAndJitter()
             Log.d(TAG, "Latency: ${latencyMs}ms  Jitter: ${jitterMs}ms")
 
-            Log.d(TAG, "Starting download (${DOWNLOAD_DURATION_MS}ms window)...")
+            Log.d(TAG, "Starting download (${downloadDurationMs}ms window, ${threadCount} threads)...")
             val downloadMbps = measureDownload()
             Log.d(TAG, "Download: ${String.format("%.2f", downloadMbps)} Mbps")
 
-            Log.d(TAG, "Starting upload (${UPLOAD_DURATION_MS}ms window)...")
+            Log.d(TAG, "Starting upload (${uploadDurationMs}ms window)...")
             val uploadMbps = measureUpload()
             Log.d(TAG, "Upload: ${String.format("%.2f", uploadMbps)} Mbps")
 
@@ -89,10 +86,10 @@ internal class SpeedMeasurement {
     // Duration-based download: THREAD_COUNT streams each loop 1MB chunks for DOWNLOAD_DURATION_MS
     private fun measureDownload(): Double {
         val totalBytes = AtomicLong(0)
-        val deadline = System.currentTimeMillis() + DOWNLOAD_DURATION_MS
+        val deadline = System.currentTimeMillis() + downloadDurationMs
         val startTime = System.currentTimeMillis()
 
-        val threads = (1..THREAD_COUNT).map {
+        val threads = (1..threadCount).map {
             Thread {
                 while (System.currentTimeMillis() < deadline) {
                     try {
@@ -117,7 +114,7 @@ internal class SpeedMeasurement {
             }.also { it.start() }
         }
 
-        threads.forEach { it.join(DOWNLOAD_DURATION_MS + 3000) }
+        threads.forEach { it.join(downloadDurationMs + 3000) }
         val elapsed = max(System.currentTimeMillis() - startTime, 1L)
         return totalBytes.get() * 8.0 / elapsed / 1000.0 // Mbps
     }
@@ -126,10 +123,10 @@ internal class SpeedMeasurement {
     private fun measureUpload(): Double {
         val payload = ByteArray(UL_CHUNK_BYTES) { (it % 256).toByte() }
         val totalBytes = AtomicLong(0)
-        val deadline = System.currentTimeMillis() + UPLOAD_DURATION_MS
+        val deadline = System.currentTimeMillis() + uploadDurationMs
         val startTime = System.currentTimeMillis()
 
-        val threads = (1..THREAD_COUNT).map {
+        val threads = (1..threadCount).map {
             Thread {
                 while (System.currentTimeMillis() < deadline) {
                     try {
@@ -150,7 +147,7 @@ internal class SpeedMeasurement {
             }.also { it.start() }
         }
 
-        threads.forEach { it.join(UPLOAD_DURATION_MS + 3000) }
+        threads.forEach { it.join(uploadDurationMs + 3000) }
         val elapsed = max(System.currentTimeMillis() - startTime, 1L)
         return totalBytes.get() * 8.0 / elapsed / 1000.0 // Mbps
     }

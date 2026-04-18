@@ -61,7 +61,13 @@ internal class NetworkMetricsWorker(
             val geo = getLastLocation()
 
             val (speed, social, streaming) = coroutineScope {
-                val s  = if (config.enableSpeed) async { SpeedMeasurement().measure() } else null
+                val s  = if (config.enableSpeed) async {
+                SpeedMeasurement(
+                    downloadDurationMs = config.speedDownloadDurationMs,
+                    uploadDurationMs   = config.speedUploadDurationMs,
+                    threadCount        = config.speedThreadCount,
+                ).measure()
+            } else null
                 val sl = if (config.enableSocialLatency) async { SocialLatencyMeasurement().measure() } else null
                 val st = if (config.enableStreaming) async { StreamingMeasurement().measure() } else null
                 Triple(s?.await(), sl?.await() ?: emptyList(), st?.await())
