@@ -1,5 +1,6 @@
 package com.kevindupas.networkmetrics.measurement
 
+import android.util.Log
 import com.kevindupas.networkmetrics.model.SpeedResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -11,6 +12,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.max
 
+private const val TAG = "SpeedMeasurement"
 private const val CF_BASE = "https://speed.cloudflare.com"
 private const val DOWNLOAD_DURATION_MS = 5_000L
 private const val UPLOAD_DURATION_MS = 5_000L
@@ -27,10 +29,15 @@ internal class SpeedMeasurement {
 
     suspend fun measure(): SpeedResult? = withContext(Dispatchers.IO) {
         try {
+            Log.d(TAG, "Starting latency...")
             val latencyMs = measureLatency()
+            Log.d(TAG, "Latency: ${latencyMs}ms — starting jitter...")
             val jitterMs = measureJitter()
+            Log.d(TAG, "Jitter: ${jitterMs}ms — starting download...")
             val downloadMbps = measureDownload()
+            Log.d(TAG, "Download: ${downloadMbps}Mbps — starting upload...")
             val uploadMbps = measureUpload()
+            Log.d(TAG, "Upload: ${uploadMbps}Mbps — done")
             val loadedLatency = measureLoadedLatency()
 
             SpeedResult(
@@ -43,6 +50,7 @@ internal class SpeedMeasurement {
                 serverLocation = fetchColoLocation(),
             )
         } catch (e: Exception) {
+            Log.e(TAG, "Speed measurement failed: ${e.message}")
             null
         }
     }
