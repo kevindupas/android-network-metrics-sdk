@@ -4,41 +4,53 @@ import android.util.Log
 import com.kevindupas.networkmetrics.model.SpeedResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.MediaType.Companion.toMediaType
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 import kotlin.math.max
 
 private const val TAG = "SpeedMeasurement"
 private const val CF_BASE = "https://speed.cloudflare.com"
-private const val DOWNLOAD_DURATION_MS = 5_000L
-private const val UPLOAD_DURATION_MS = 5_000L
-private const val PING_COUNT = 10
-private const val THREAD_COUNT = 4
+
+// Duration-based measurement — works on 3G (500ms+), 4G, 5G, WiFi
+private const val PING_COUNT = 8
+private const val DOWNLOAD_DURATION_MS = 8_000L  // 8s window
+private const val UPLOAD_DURATION_MS = 6_000L    // 6s window
+private const val THREAD_COUNT = 3               // 3 parallel streams
+
+// Chunk sizes — start small, re-request in loop until window closes
+private const val DL_CHUNK_BYTES = 1 * 1024 * 1024  // 1 MB per request (3G-friendly)
+private const val UL_CHUNK_BYTES = 256 * 1024        // 256 KB per request (3G-friendly)
 
 internal class SpeedMeasurement {
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
     suspend fun measure(): SpeedResult? = withContext(Dispatchers.IO) {
         try {
-            Log.d(TAG, "Starting latency...")
-            val latencyMs = measureLatency()
-            Log.d(TAG, "Latency: ${latencyMs}ms — starting jitter...")
-            val jitterMs = measureJitter()
-            Log.d(TAG, "Jitter: ${jitterMs}ms — starting download...")
+            Log.d(TAG, "Starting latency measurement...")
+            val (latencyMs, jitterMs) = measureLatencyAndJitter()
+            Log.d(TAG, "Latency: ${latencyMs}ms  Jitter: ${jitterMs}ms")
+
+            Log.d(TAG, "Starting download (${DOWNLOAD_DURATION_MS}ms window)...")
             val downloadMbps = measureDownload()
-            Log.d(TAG, "Download: ${downloadMbps}Mbps — starting upload...")
+            Log.d(TAG, "Download: ${String.format("%.2f", downloadMbps)} Mbps")
+
+            Log.d(TAG, "Starting upload (${UPLOAD_DURATION_MS}ms window)...")
             val uploadMbps = measureUpload()
-            Log.d(TAG, "Upload: ${uploadMbps}Mbps — done")
+            Log.d(TAG, "Upload: ${String.format("%.2f", uploadMbps)} Mbps")
+
             val loadedLatency = measureLoadedLatency()
+            val colo = fetchColoLocation()
 
             SpeedResult(
                 downloadMbps = downloadMbps,
@@ -47,7 +59,7 @@ internal class SpeedMeasurement {
                 jitterMs = jitterMs,
                 loadedLatencyMs = loadedLatency,
                 serverName = "Cloudflare",
-                serverLocation = fetchColoLocation(),
+                serverLocation = colo,
             )
         } catch (e: Exception) {
             Log.e(TAG, "Speed measurement failed: ${e.message}")
@@ -55,74 +67,92 @@ internal class SpeedMeasurement {
         }
     }
 
-    private fun measureLatency(): Double {
+    // Single pass for both latency + jitter to save time
+    private fun measureLatencyAndJitter(): Pair<Double, Double> {
         val pings = mutableListOf<Long>()
         repeat(PING_COUNT) {
             val start = System.currentTimeMillis()
             try {
-                client.newCall(Request.Builder().url("$CF_BASE/__down?bytes=0").build()).execute().use {}
+                client.newCall(
+                    Request.Builder().url("$CF_BASE/__down?bytes=0").build()
+                ).execute().use {}
                 pings.add(System.currentTimeMillis() - start)
             } catch (_: Exception) {}
         }
-        return if (pings.isEmpty()) 0.0 else pings.average()
+        if (pings.isEmpty()) return Pair(0.0, 0.0)
+        val latency = pings.average()
+        val jitter = if (pings.size < 2) 0.0
+            else (1 until pings.size).map { abs(pings[it] - pings[it - 1]).toDouble() }.average()
+        return Pair(latency, jitter)
     }
 
-    private fun measureJitter(): Double {
-        val pings = mutableListOf<Long>()
-        repeat(PING_COUNT) {
-            val start = System.currentTimeMillis()
-            try {
-                client.newCall(Request.Builder().url("$CF_BASE/__down?bytes=0").build()).execute().use {}
-                pings.add(System.currentTimeMillis() - start)
-            } catch (_: Exception) {}
-        }
-        if (pings.size < 2) return 0.0
-        return (1 until pings.size).map { abs(pings[it] - pings[it - 1]).toDouble() }.average()
-    }
-
+    // Duration-based download: THREAD_COUNT streams each loop 1MB chunks for DOWNLOAD_DURATION_MS
     private fun measureDownload(): Double {
-        val chunkSize = 10 * 1024 * 1024 // 10 MB chunks
-        var totalBytes = 0L
-        val start = System.currentTimeMillis()
+        val totalBytes = AtomicLong(0)
+        val deadline = System.currentTimeMillis() + DOWNLOAD_DURATION_MS
+        val startTime = System.currentTimeMillis()
+
         val threads = (1..THREAD_COUNT).map {
             Thread {
-                try {
-                    client.newCall(
-                        Request.Builder().url("$CF_BASE/__down?bytes=$chunkSize").build()
-                    ).execute().use { resp ->
-                        val bytes = resp.body?.bytes()?.size?.toLong() ?: 0L
-                        synchronized(this) { totalBytes += bytes }
+                while (System.currentTimeMillis() < deadline) {
+                    try {
+                        client.newCall(
+                            Request.Builder()
+                                .url("$CF_BASE/__down?bytes=$DL_CHUNK_BYTES")
+                                .build()
+                        ).execute().use { resp ->
+                            // Stream body to avoid holding entire chunk in memory
+                            val source = resp.body?.source() ?: return@use
+                            val buf = ByteArray(8192)
+                            var read: Int
+                            while (source.read(buf).also { read = it } != -1) {
+                                totalBytes.addAndGet(read.toLong())
+                                if (System.currentTimeMillis() >= deadline) break
+                            }
+                        }
+                    } catch (_: Exception) {
+                        break
                     }
-                } catch (_: Exception) {}
+                }
             }.also { it.start() }
         }
-        threads.forEach { it.join(DOWNLOAD_DURATION_MS + 2000) }
-        val elapsed = max(System.currentTimeMillis() - start, 1L)
-        return totalBytes * 8.0 / elapsed / 1000.0 // Mbps
+
+        threads.forEach { it.join(DOWNLOAD_DURATION_MS + 3000) }
+        val elapsed = max(System.currentTimeMillis() - startTime, 1L)
+        return totalBytes.get() * 8.0 / elapsed / 1000.0 // Mbps
     }
 
+    // Duration-based upload: THREAD_COUNT streams each loop 256KB chunks for UPLOAD_DURATION_MS
     private fun measureUpload(): Double {
-        val chunkSize = 2 * 1024 * 1024 // 2 MB
-        val payload = ByteArray(chunkSize) { (it % 256).toByte() }
-        var totalBytes = 0L
-        val start = System.currentTimeMillis()
+        val payload = ByteArray(UL_CHUNK_BYTES) { (it % 256).toByte() }
+        val totalBytes = AtomicLong(0)
+        val deadline = System.currentTimeMillis() + UPLOAD_DURATION_MS
+        val startTime = System.currentTimeMillis()
+
         val threads = (1..THREAD_COUNT).map {
             Thread {
-                try {
-                    client.newCall(
-                        Request.Builder()
-                            .url("$CF_BASE/__up")
-                            .post(payload.toRequestBody("application/octet-stream".toMediaType()))
-                            .build()
-                    ).execute().use {
-                        synchronized(this) { totalBytes += chunkSize }
+                while (System.currentTimeMillis() < deadline) {
+                    try {
+                        client.newCall(
+                            Request.Builder()
+                                .url("$CF_BASE/__up")
+                                .post(payload.toRequestBody("application/octet-stream".toMediaType()))
+                                .build()
+                        ).execute().use { resp ->
+                            if (resp.isSuccessful) {
+                                totalBytes.addAndGet(UL_CHUNK_BYTES.toLong())
+                            }
+                        }
+                    } catch (_: Exception) {
+                        break
                     }
-                } catch (_: Exception) {}
+                }
             }.also { it.start() }
         }
-        threads.forEach { it.join(UPLOAD_DURATION_MS + 2000) }
-        val elapsed = max(System.currentTimeMillis() - start, 1L)
-        return totalBytes * 8.0 / elapsed / 1000.0
+
+        threads.forEach { it.join(UPLOAD_DURATION_MS + 3000) }
+        val elapsed = max(System.currentTimeMillis() - startTime, 1L)
+        return totalBytes.get() * 8.0 / elapsed / 1000.0 // Mbps
     }
 
     private fun measureLoadedLatency(): Double? {

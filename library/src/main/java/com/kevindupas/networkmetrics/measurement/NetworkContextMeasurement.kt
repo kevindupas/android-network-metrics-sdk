@@ -14,8 +14,9 @@ import java.util.concurrent.TimeUnit
 internal class NetworkContextMeasurement {
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
     suspend fun measure(): NetworkResult = withContext(Dispatchers.IO) {

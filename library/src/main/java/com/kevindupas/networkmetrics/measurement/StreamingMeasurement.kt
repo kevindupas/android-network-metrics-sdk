@@ -10,13 +10,14 @@ import java.util.concurrent.TimeUnit
 // HLS manifest of Big Buck Bunny (open licence)
 private const val HLS_MANIFEST_URL =
     "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
-private const val MEASURE_DURATION_MS = 15_000L
+private const val MEASURE_DURATION_MS = 20_000L  // 20s — enough for 3G to buffer segments
 
 internal class StreamingMeasurement {
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
     suspend fun measure(): StreamingResult = withContext(Dispatchers.IO) {

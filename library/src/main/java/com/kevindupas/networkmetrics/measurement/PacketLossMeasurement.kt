@@ -8,9 +8,9 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.Socket
 
-private const val PACKET_COUNT = 50
-private const val INTERVAL_MS = 20L
-private const val TIMEOUT_MS = 3000
+private const val PACKET_COUNT = 30       // reduced for 3G — still statistically valid
+private const val INTERVAL_MS = 50L       // 50ms between packets — 3G-safe
+private const val TIMEOUT_MS = 5000       // 5s timeout per packet — Africa latency
 private const val PROBE_PAYLOAD = "PING"
 
 internal class PacketLossMeasurement(
@@ -27,7 +27,7 @@ internal class PacketLossMeasurement(
     private fun probeUdp(): Boolean {
         return try {
             val socket = DatagramSocket()
-            socket.soTimeout = 2000
+            socket.soTimeout = 5000
             val addr = InetAddress.getByName(host)
             val payload = PROBE_PAYLOAD.toByteArray()
             socket.send(DatagramPacket(payload, payload.size, addr, udpPort))
