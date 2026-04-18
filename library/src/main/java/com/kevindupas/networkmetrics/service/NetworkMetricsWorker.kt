@@ -7,6 +7,9 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.google.android.gms.location.LocationServices
 import com.kevindupas.networkmetrics.core.ConfigHolder
+import com.kevindupas.networkmetrics.core.PREF_LAST_RESULT
+import com.kevindupas.networkmetrics.core.PREF_LAST_RESULT_AT
+import com.kevindupas.networkmetrics.core.PREFS_NAME
 import com.kevindupas.networkmetrics.core.RemoteConfigFetcher
 import com.kevindupas.networkmetrics.measurement.DeviceMeasurement
 import com.kevindupas.networkmetrics.measurement.DnsMeasurement
@@ -133,6 +136,12 @@ internal class NetworkMetricsWorker(
                 webBrowsing = webBrowsing,
                 neighboringCells = neighboring,
             )
+
+            val json = recordToJson(record).toString()
+            appContext.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).edit()
+                .putString(PREF_LAST_RESULT, json)
+                .putLong(PREF_LAST_RESULT_AT, System.currentTimeMillis())
+                .apply()
 
             postRecord(record, config.backendUrl, config.authHeader)
             Log.d(TAG, "Cycle complete — testId=${record.testId}")

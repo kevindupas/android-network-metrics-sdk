@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.kevindupas.networkmetrics.service.NetworkMetricsWorker
@@ -12,6 +13,11 @@ import java.util.concurrent.TimeUnit
 
 private const val TAG = "NetworkMetricsSdk"
 private const val WORK_NAME = "network_metrics_periodic"
+private const val ONE_SHOT_NAME = "network_metrics_one_shot"
+
+const val PREFS_NAME = "network_metrics_sdk"
+const val PREF_LAST_RESULT = "last_result_json"
+const val PREF_LAST_RESULT_AT = "last_result_at"
 
 object NetworkMetricsSdk {
 
@@ -45,6 +51,33 @@ object NetworkMetricsSdk {
         )
 
         Log.d(TAG, "Scheduled every $intervalMinutes min (invisible, no notification)")
+    }
+
+    fun measureNow(context: Context) {
+        checkNotNull(config) { "NetworkMetricsSdk.init() must be called before measureNow()" }
+        val request = OneTimeWorkRequestBuilder<NetworkMetricsWorker>()
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            ONE_SHOT_NAME,
+            androidx.work.ExistingWorkPolicy.REPLACE,
+            request,
+        )
+        Log.d(TAG, "One-shot measurement enqueued")
+    }
+
+    fun getLastResult(context: Context): String? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(PREF_LAST_RESULT, null)
+    }
+
+    fun getLastResultTimestamp(context: Context): Long {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getLong(PREF_LAST_RESULT_AT, 0L)
     }
 
     fun stop(context: Context) {
