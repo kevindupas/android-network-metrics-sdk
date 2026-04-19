@@ -43,7 +43,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 
 private const val TAG = "NetworkMetricsWorker"
-private const val SDK_VERSION = "1.0.15"
+private const val SDK_VERSION = "1.0.16"
 
 internal class NetworkMetricsWorker(
     private val appContext: Context,
