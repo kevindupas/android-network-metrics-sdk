@@ -37,15 +37,19 @@ internal class RadioMeasurement(private val context: Context) {
         val signalLevel = signalStrengthLabel(tm.signalStrength)
         val networkGen = detectNetworkGeneration(tm)
         val isRoaming = try { tm.isNetworkRoaming } catch (_: Exception) { false }
+        val isVoLte = try { tm.isVoLteAvailable } catch (_: Exception) { false }
+        val isVoNr = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try { tm.isVoNrAvailable } catch (_: Exception) { false }
+        } else false
 
         if (!hasPermissions()) {
-            return emptyResult(networkGen, signalLevel, connectionType, isRoaming = isRoaming)
+            return emptyResult(networkGen, signalLevel, connectionType, isRoaming = isRoaming, isVoLte = isVoLte, isVoNr = isVoNr)
         }
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            buildFromCellInfo(tm, networkGen, signalLevel, connectionType, isRoaming)
+            buildFromCellInfo(tm, networkGen, signalLevel, connectionType, isRoaming, isVoLte, isVoNr)
         } else {
-            emptyResult(networkGen, signalLevel, connectionType, isRoaming = isRoaming)
+            emptyResult(networkGen, signalLevel, connectionType, isRoaming = isRoaming, isVoLte = isVoLte, isVoNr = isVoNr)
         }
     }
 
@@ -57,6 +61,8 @@ internal class RadioMeasurement(private val context: Context) {
         signalLevel: String,
         tech: String,
         isRoaming: Boolean,
+        isVoLte: Boolean,
+        isVoNr: Boolean,
     ): RadioResult {
         val cells = try { tm.allCellInfo } catch (_: Exception) { emptyList() }
         val nrMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) detect5GMode(tm) else null
@@ -85,6 +91,8 @@ internal class RadioMeasurement(private val context: Context) {
                         bandwidth = bw,
                         psc = null,
                         isNrAvailable = isNr,
+                        isVoLteAvailable = isVoLte,
+                        isVoNrAvailable = isVoNr,
                         isRoaming = isRoaming,
                         nrMode = nrMode,
                         networkGeneration = networkGen,
@@ -109,6 +117,8 @@ internal class RadioMeasurement(private val context: Context) {
                         bandwidth = null,
                         psc = null,
                         isNrAvailable = true,
+                        isVoLteAvailable = isVoLte,
+                        isVoNrAvailable = isVoNr,
                         isRoaming = isRoaming,
                         nrMode = "SA",
                         networkGeneration = networkGen,
@@ -130,6 +140,8 @@ internal class RadioMeasurement(private val context: Context) {
                         bandwidth = null,
                         psc = id.psc.takeUnless { it == CellInfo.UNAVAILABLE },
                         isNrAvailable = false,
+                        isVoLteAvailable = isVoLte,
+                        isVoNrAvailable = isVoNr,
                         isRoaming = isRoaming,
                         nrMode = null,
                         networkGeneration = networkGen,
@@ -151,6 +163,8 @@ internal class RadioMeasurement(private val context: Context) {
                         bandwidth = null,
                         psc = null,
                         isNrAvailable = false,
+                        isVoLteAvailable = isVoLte,
+                        isVoNrAvailable = isVoNr,
                         isRoaming = isRoaming,
                         nrMode = null,
                         networkGeneration = networkGen,
@@ -161,17 +175,20 @@ internal class RadioMeasurement(private val context: Context) {
             }
         }
 
-        return emptyResult(networkGen, signalLevel, tech, isNr, isRoaming, nrMode)
+        return emptyResult(networkGen, signalLevel, tech, isNr, isRoaming, nrMode, isVoLte, isVoNr)
     }
 
     private fun emptyResult(
         networkGen: String, signalLevel: String, tech: String,
         isNr: Boolean = false, isRoaming: Boolean = false, nrMode: String? = null,
+        isVoLte: Boolean = false, isVoNr: Boolean = false,
     ) = RadioResult(
         rsrp = null, rsrq = null, sinr = null, rssi = null, cqi = null,
         ci = null, pci = null, tac = null, lac = null,
         earfcn = null, bandwidth = null, psc = null,
         isNrAvailable = isNr,
+        isVoLteAvailable = isVoLte,
+        isVoNrAvailable = isVoNr,
         isRoaming = isRoaming,
         nrMode = nrMode,
         networkGeneration = networkGen,

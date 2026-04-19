@@ -70,6 +70,8 @@ data class RadioResult(
     val bandwidth: Int?, // LTE channel bandwidth in kHz (e.g. 20000 = 20 MHz)
     val psc: Int?,       // WCDMA Primary Scrambling Code
     val isNrAvailable: Boolean,
+    val isVoLteAvailable: Boolean,
+    val isVoNrAvailable: Boolean,
     val isRoaming: Boolean,
     val nrMode: String?, // "NSA" | "SA" | null
     val networkGeneration: String,
