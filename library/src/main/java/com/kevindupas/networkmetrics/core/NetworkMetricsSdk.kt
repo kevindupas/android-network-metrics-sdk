@@ -61,10 +61,19 @@ object NetworkMetricsSdk {
      * @param progressCallback optional — called after each phase with partial results.
      *   Runs on a background coroutine; marshal to main thread yourself if updating UI.
      */
-    fun measureNow(context: Context, progressCallback: ProgressCallback? = null) {
+    @JvmOverloads
+    fun measureNow(
+        context: Context,
+        progressCallback: ProgressCallback? = null,
+        skipSpeed: Boolean = false,
+    ) {
         checkNotNull(config) { "NetworkMetricsSdk.init() must be called before measureNow()" }
         ConfigHolder.progressCallback = progressCallback
+        val inputData = androidx.work.Data.Builder()
+            .putBoolean("skipSpeed", skipSpeed)
+            .build()
         val request = OneTimeWorkRequestBuilder<NetworkMetricsWorker>()
+            .setInputData(inputData)
             .setConstraints(
                 Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -76,7 +85,7 @@ object NetworkMetricsSdk {
             androidx.work.ExistingWorkPolicy.REPLACE,
             request,
         )
-        Log.d(TAG, "One-shot measurement enqueued")
+        Log.d(TAG, "One-shot measurement enqueued (skipSpeed=$skipSpeed)")
     }
 
     /**

@@ -43,7 +43,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 
 private const val TAG = "NetworkMetricsWorker"
-private const val SDK_VERSION = "1.0.18"
+private const val SDK_VERSION = "1.0.19"
 
 internal class NetworkMetricsWorker(
     private val appContext: Context,
@@ -89,7 +89,8 @@ internal class NetworkMetricsWorker(
             val geo = getLastLocation()
             emit(MeasurementProgress.Phase.GEO, geo)
 
-            val speed = if (config.enableSpeed) {
+            val skipSpeed = inputData.getBoolean("skipSpeed", false)
+            val speed = if (config.enableSpeed && !skipSpeed) {
                 SpeedMeasurement(
                     downloadDurationMs = config.speedDownloadDurationMs,
                     uploadDurationMs   = config.speedUploadDurationMs,
