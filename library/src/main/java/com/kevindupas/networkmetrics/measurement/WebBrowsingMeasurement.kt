@@ -15,6 +15,7 @@ import java.net.Proxy
 import java.util.concurrent.TimeUnit
 
 data class WebTarget(val name: String, val url: String)
+data class SocialTarget(val service: String, val url: String)
 
 internal class WebBrowsingMeasurement(private val targets: List<WebTarget>) {
 

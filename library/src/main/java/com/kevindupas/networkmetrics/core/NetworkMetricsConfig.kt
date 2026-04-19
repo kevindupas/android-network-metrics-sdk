@@ -1,5 +1,7 @@
 package com.kevindupas.networkmetrics.core
 
+import com.kevindupas.networkmetrics.measurement.DEFAULT_SOCIAL_TARGETS
+import com.kevindupas.networkmetrics.measurement.SocialTarget
 import com.kevindupas.networkmetrics.measurement.WebTarget
 
 data class NetworkMetricsConfig(
@@ -29,11 +31,16 @@ data class NetworkMetricsConfig(
     val speedThreadCount: Int = 3,
 
     // Web browsing targets — override via remoteConfigUrl or set directly
-    // Default targets cover common global services (regulators can override per country)
     val webTargets: List<WebTarget> = DEFAULT_WEB_TARGETS,
 
-    // Remote config — if set, SDK fetches targets JSON from this URL each cycle (cached 1h)
-    // Expected format: { "targets": [{ "name": "...", "url": "..." }] }
+    // Social latency targets — override via remoteConfigUrl or set directly
+    val socialTargets: List<SocialTarget> = DEFAULT_SOCIAL_TARGETS,
+
+    // HLS streaming URL for streaming measurement
+    val streamingUrl: String? = null,
+
+    // Remote config — fetched each cycle (cached 1h)
+    // Format: { "webTargets": [...], "socialTargets": [...], "streamingUrl": "..." }
     val remoteConfigUrl: String? = null,
 
     // Notification (kept for API compatibility — unused since WorkManager migration)
@@ -74,6 +81,8 @@ data class NetworkMetricsConfig(
         private var speedUploadDurationMs = 6_000L
         private var speedThreadCount = 3
         private var webTargets: List<WebTarget> = DEFAULT_WEB_TARGETS
+        private var socialTargets: List<SocialTarget> = DEFAULT_SOCIAL_TARGETS
+        private var streamingUrl: String? = null
         private var remoteConfigUrl: String? = null
         private var authHeader: String? = null
 
@@ -92,6 +101,8 @@ data class NetworkMetricsConfig(
         fun speedUploadDurationMs(v: Long)       = apply { speedUploadDurationMs = v }
         fun speedThreadCount(v: Int)             = apply { speedThreadCount = v }
         fun webTargets(v: List<WebTarget>)       = apply { webTargets = v }
+        fun socialTargets(v: List<SocialTarget>) = apply { socialTargets = v }
+        fun streamingUrl(v: String?)             = apply { streamingUrl = v }
         fun remoteConfigUrl(v: String?)          = apply { remoteConfigUrl = v }
         fun authHeader(v: String?)               = apply { authHeader = v }
 
@@ -107,6 +118,8 @@ data class NetworkMetricsConfig(
             speedUploadDurationMs = speedUploadDurationMs,
             speedThreadCount = speedThreadCount,
             webTargets = webTargets,
+            socialTargets = socialTargets,
+            streamingUrl = streamingUrl,
             remoteConfigUrl = remoteConfigUrl,
             authHeader = authHeader,
         )

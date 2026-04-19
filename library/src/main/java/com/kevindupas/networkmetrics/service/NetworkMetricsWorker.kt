@@ -7,6 +7,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.google.android.gms.location.LocationServices
 import com.kevindupas.networkmetrics.core.ConfigHolder
+import com.kevindupas.networkmetrics.core.MeasurementProgress
 import com.kevindupas.networkmetrics.core.PREF_LAST_RESULT
 import com.kevindupas.networkmetrics.core.PREF_LAST_RESULT_AT
 import com.kevindupas.networkmetrics.core.PREFS_NAME
@@ -25,11 +26,9 @@ import com.kevindupas.networkmetrics.model.GeoResult
 import com.kevindupas.networkmetrics.model.NetworkMetricsRecord
 import com.kevindupas.networkmetrics.util.MosCalculator
 import com.kevindupas.networkmetrics.util.QualityScoresCalculator
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -44,6 +43,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 
 private const val TAG = "NetworkMetricsWorker"
+private const val SDK_VERSION = "1.0.14"
 
 internal class NetworkMetricsWorker(
     private val appContext: Context,
@@ -56,6 +56,10 @@ internal class NetworkMetricsWorker(
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
+    private fun emit(phase: MeasurementProgress.Phase, result: Any? = null) {
+        ConfigHolder.progressCallback?.onProgress(MeasurementProgress(phase, result))
+    }
+
     override suspend fun doWork(): Result {
         val config = ConfigHolder.config ?: run {
             Log.e(TAG, "Config missing — skipping cycle")
@@ -65,55 +69,88 @@ internal class NetworkMetricsWorker(
         Log.d(TAG, "Starting measurement cycle")
 
         return try {
-            val geo = getLastLocation()
-
-            val webTargets = if (config.enableWebBrowsing) {
-                if (config.remoteConfigUrl != null) {
-                    RemoteConfigFetcher.fetchWebTargets(config.remoteConfigUrl, config.authHeader, config.webTargets)
-                } else {
-                    config.webTargets
-                }
-            } else emptyList()
-
-            val speed: com.kevindupas.networkmetrics.model.SpeedResult?
-            val social: List<com.kevindupas.networkmetrics.model.SocialLatencyResult>
-            val streaming: com.kevindupas.networkmetrics.model.StreamingResult?
-            val dns: com.kevindupas.networkmetrics.model.DnsResult?
-            val webBrowsing: List<com.kevindupas.networkmetrics.model.WebBrowsingResult>
-            coroutineScope {
-                val sD  = if (config.enableSpeed) async {
-                    SpeedMeasurement(
-                        downloadDurationMs = config.speedDownloadDurationMs,
-                        uploadDurationMs   = config.speedUploadDurationMs,
-                        threadCount        = config.speedThreadCount,
-                    ).measure()
-                } else null
-                val slD = if (config.enableSocialLatency) async { SocialLatencyMeasurement().measure() } else null
-                val stD = if (config.enableStreaming) async { StreamingMeasurement().measure() } else null
-                val dnD = if (config.enableDns) async { DnsMeasurement().measure() } else null
-                val wbD = if (config.enableWebBrowsing && webTargets.isNotEmpty()) async {
-                    WebBrowsingMeasurement(webTargets).measure()
-                } else null
-                speed       = sD?.await()
-                social      = slD?.await() ?: emptyList()
-                streaming   = stD?.await()
-                dns         = dnD?.await()
-                webBrowsing = wbD?.await() ?: emptyList()
+            // Resolve remote config (web targets + social targets + streamingUrl)
+            val remoteConfig = if (config.remoteConfigUrl != null) {
+                RemoteConfigFetcher.fetch(
+                    config.remoteConfigUrl,
+                    config.authHeader,
+                    config.webTargets,
+                    config.socialTargets,
+                    config.streamingUrl,
+                )
+            } else {
+                com.kevindupas.networkmetrics.core.RemoteConfig(
+                    config.webTargets,
+                    config.socialTargets,
+                    config.streamingUrl,
+                )
             }
+
+            val geo = getLastLocation()
+            emit(MeasurementProgress.Phase.GEO, geo)
+
+            val speed = if (config.enableSpeed) {
+                SpeedMeasurement(
+                    downloadDurationMs = config.speedDownloadDurationMs,
+                    uploadDurationMs   = config.speedUploadDurationMs,
+                    threadCount        = config.speedThreadCount,
+                ).measure().also { emit(MeasurementProgress.Phase.SPEED, it) }
+            } else null
 
             val udp = if (config.enablePacketLoss && config.udpHost.isNotBlank()) {
                 PacketLossMeasurement(config.udpHost, config.udpPort, config.tcpPort).measure()
-            } else null
+                    .also { emit(MeasurementProgress.Phase.PACKET_LOSS, it) }
+            } else {
+                emit(MeasurementProgress.Phase.PACKET_LOSS, null)
+                null
+            }
 
-            val radio   = RadioMeasurement(appContext).measure()
+            val streaming = if (config.enableStreaming) {
+                StreamingMeasurement(streamingUrl = remoteConfig.streamingUrl).measure()
+                    .also { emit(MeasurementProgress.Phase.STREAMING, it) }
+            } else {
+                emit(MeasurementProgress.Phase.STREAMING, null)
+                null
+            }
+
+            val social = if (config.enableSocialLatency) {
+                SocialLatencyMeasurement(remoteConfig.socialTargets).measure()
+                    .also { emit(MeasurementProgress.Phase.SOCIAL_LATENCY, it) }
+            } else {
+                emit(MeasurementProgress.Phase.SOCIAL_LATENCY, emptyList<Any>())
+                emptyList()
+            }
+
+            val dns = if (config.enableDns) {
+                DnsMeasurement().measure().also { emit(MeasurementProgress.Phase.DNS, it) }
+            } else {
+                emit(MeasurementProgress.Phase.DNS, null)
+                null
+            }
+
+            val webBrowsing = if (config.enableWebBrowsing && remoteConfig.webTargets.isNotEmpty()) {
+                WebBrowsingMeasurement(remoteConfig.webTargets).measure()
+                    .also { emit(MeasurementProgress.Phase.WEB_BROWSING, it) }
+            } else {
+                emit(MeasurementProgress.Phase.WEB_BROWSING, emptyList<Any>())
+                emptyList()
+            }
+
+            val radio = RadioMeasurement(appContext).measure()
+                .also { emit(MeasurementProgress.Phase.RADIO, it) }
+
             val neighboring = if (config.enableNeighboringCells && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
                 NeighboringCellsMeasurement(appContext).measure()
             } else emptyList()
-            val network = NetworkContextMeasurement().measure()
-            val device  = DeviceMeasurement(appContext).measure()
 
-            val loss = udp?.lossPercent ?: 0.0
-            val mos  = speed?.let { MosCalculator.calculate(it.latencyMs, it.jitterMs, loss) }
+            val network = NetworkContextMeasurement().measure()
+                .also { emit(MeasurementProgress.Phase.NETWORK, it) }
+
+            val device = DeviceMeasurement(appContext).measure()
+                .also { emit(MeasurementProgress.Phase.DEVICE, it) }
+
+            val loss   = udp?.lossPercent ?: 0.0
+            val mos    = speed?.let { MosCalculator.calculate(it.latencyMs, it.jitterMs, loss) }
             val scores = speed?.let {
                 QualityScoresCalculator.calculate(it.downloadMbps, it.latencyMs, it.jitterMs, loss)
             }
@@ -124,22 +161,22 @@ internal class NetworkMetricsWorker(
             ) ?: "unknown"
 
             val record = NetworkMetricsRecord(
-                testId = UUID.randomUUID().toString(),
-                deviceId = deviceId,
-                timestamp = iso8601(),
-                sdkVersion = "1.0.0",
-                speed = speed,
-                udpPacketLoss = udp,
-                streaming = streaming,
-                socialLatency = social,
-                radio = radio,
-                network = network,
-                geo = geo,
-                device = device,
-                scores = scores,
-                mos = mos,
-                dns = dns,
-                webBrowsing = webBrowsing,
+                testId          = UUID.randomUUID().toString(),
+                deviceId        = deviceId,
+                timestamp       = iso8601(),
+                sdkVersion      = SDK_VERSION,
+                speed           = speed,
+                udpPacketLoss   = udp,
+                streaming       = streaming,
+                socialLatency   = social,
+                radio           = radio,
+                network         = network,
+                geo             = geo,
+                device          = device,
+                scores          = scores,
+                mos             = mos,
+                dns             = dns,
+                webBrowsing     = webBrowsing,
                 neighboringCells = neighboring,
             )
 
@@ -148,6 +185,8 @@ internal class NetworkMetricsWorker(
                 .putString(PREF_LAST_RESULT, json)
                 .putLong(PREF_LAST_RESULT_AT, System.currentTimeMillis())
                 .apply()
+
+            emit(MeasurementProgress.Phase.COMPLETE, record)
 
             postRecord(record, config.backendUrl, config.authHeader)
             Log.d(TAG, "Cycle complete — testId=${record.testId}")
@@ -164,12 +203,12 @@ internal class NetworkMetricsWorker(
             .addOnSuccessListener { loc ->
                 cont.resume(loc?.let {
                     GeoResult(
-                        lat = it.latitude,
-                        lon = it.longitude,
+                        lat      = it.latitude,
+                        lon      = it.longitude,
                         accuracy = it.accuracy,
                         altitude = if (it.hasAltitude()) it.altitude else null,
-                        speed = if (it.hasSpeed()) it.speed else null,
-                        bearing = if (it.hasBearing()) it.bearing else null,
+                        speed    = if (it.hasSpeed()) it.speed else null,
+                        bearing  = if (it.hasBearing()) it.bearing else null,
                         provider = it.provider,
                     )
                 })

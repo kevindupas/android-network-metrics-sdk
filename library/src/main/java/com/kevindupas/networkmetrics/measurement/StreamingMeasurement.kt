@@ -7,12 +7,13 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
-// HLS manifest of Big Buck Bunny (open licence)
-private const val HLS_MANIFEST_URL =
-    "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
-private const val MEASURE_DURATION_MS = 20_000L  // 20s — enough for 3G to buffer segments
+private const val DEFAULT_HLS_URL = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+private const val MEASURE_DURATION_MS = 20_000L
 
-internal class StreamingMeasurement {
+internal class StreamingMeasurement(
+    private val streamingUrl: String? = null,
+) {
+    private val hlsUrl = streamingUrl ?: DEFAULT_HLS_URL
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -25,14 +26,14 @@ internal class StreamingMeasurement {
             // 1. Fetch HLS manifest
             val manifestStart = System.currentTimeMillis()
             val manifestResp = client.newCall(
-                Request.Builder().url(HLS_MANIFEST_URL).build()
+                Request.Builder().url(hlsUrl).build()
             ).execute()
             val manifest = manifestResp.body?.string() ?: run {
                 return@withContext StreamingResult(null, 0, 0, null, 0, 0, "manifest fetch failed")
             }
 
             // 2. Parse segment URLs from lowest-bitrate playlist
-            val segmentUrls = parseSegmentUrls(manifest, HLS_MANIFEST_URL)
+            val segmentUrls = parseSegmentUrls(manifest, hlsUrl)
             if (segmentUrls.isEmpty()) {
                 return@withContext StreamingResult(null, 0, 0, null, 0, 0, "no segments found")
             }

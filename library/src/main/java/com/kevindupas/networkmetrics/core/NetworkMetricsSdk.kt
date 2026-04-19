@@ -31,7 +31,6 @@ object NetworkMetricsSdk {
     fun start(context: Context) {
         val cfg = checkNotNull(config) { "NetworkMetricsSdk.init() must be called before start()" }
 
-        // WorkManager minimum is 15 minutes — OS enforced
         val intervalMinutes = (cfg.intervalMs / 60_000L).coerceAtLeast(15)
 
         val request = PeriodicWorkRequestBuilder<NetworkMetricsWorker>(
@@ -50,11 +49,17 @@ object NetworkMetricsSdk {
             request,
         )
 
-        Log.d(TAG, "Scheduled every $intervalMinutes min (invisible, no notification)")
+        Log.d(TAG, "Scheduled every $intervalMinutes min")
     }
 
-    fun measureNow(context: Context) {
+    /**
+     * Trigger an immediate measurement.
+     * @param progressCallback optional — called after each phase with partial results.
+     *   Runs on a background coroutine; marshal to main thread yourself if updating UI.
+     */
+    fun measureNow(context: Context, progressCallback: ProgressCallback? = null) {
         checkNotNull(config) { "NetworkMetricsSdk.init() must be called before measureNow()" }
+        ConfigHolder.progressCallback = progressCallback
         val request = OneTimeWorkRequestBuilder<NetworkMetricsWorker>()
             .setConstraints(
                 Constraints.Builder()
@@ -90,4 +95,5 @@ object NetworkMetricsSdk {
 
 internal object ConfigHolder {
     var config: NetworkMetricsConfig? = null
+    var progressCallback: ProgressCallback? = null
 }

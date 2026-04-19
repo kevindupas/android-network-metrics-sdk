@@ -9,17 +9,18 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
-private val TARGETS = listOf(
-    "WhatsApp"  to "https://web.whatsapp.com/",
-    "Instagram" to "https://www.instagram.com/",
-    "YouTube"   to "https://www.youtube.com/",
-    "TikTok"    to "https://www.tiktok.com/",
-    "X"         to "https://x.com/",
-    "Facebook"  to "https://www.facebook.com/",
+val DEFAULT_SOCIAL_TARGETS = listOf(
+    SocialTarget("WhatsApp",  "https://web.whatsapp.com/"),
+    SocialTarget("Instagram", "https://www.instagram.com/"),
+    SocialTarget("YouTube",   "https://www.youtube.com/"),
+    SocialTarget("TikTok",    "https://www.tiktok.com/"),
+    SocialTarget("X",         "https://x.com/"),
+    SocialTarget("Facebook",  "https://www.facebook.com/"),
 )
 
-internal class SocialLatencyMeasurement {
-
+internal class SocialLatencyMeasurement(
+    private val targets: List<SocialTarget> = DEFAULT_SOCIAL_TARGETS,
+) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
@@ -27,18 +28,17 @@ internal class SocialLatencyMeasurement {
         .build()
 
     suspend fun measure(): List<SocialLatencyResult> = withContext(Dispatchers.IO) {
-        TARGETS.map { (service, url) ->
+        targets.map { target ->
             async {
                 val start = System.currentTimeMillis()
                 try {
-                    client.newCall(Request.Builder().url(url).head().build()).execute().use { resp ->
+                    client.newCall(Request.Builder().url(target.url).head().build()).execute().use { resp ->
                         val ttfb = System.currentTimeMillis() - start
-                        SocialLatencyResult(service, ttfb, resp.code in 100..599)
+                        SocialLatencyResult(target.service, ttfb, resp.code in 100..599)
                     }
                 } catch (_: Exception) {
-                    // Connection refused / timeout still gives us a TTFB indicator
                     val ttfb = System.currentTimeMillis() - start
-                    SocialLatencyResult(service, ttfb, false)
+                    SocialLatencyResult(target.service, ttfb, false)
                 }
             }
         }.awaitAll()
