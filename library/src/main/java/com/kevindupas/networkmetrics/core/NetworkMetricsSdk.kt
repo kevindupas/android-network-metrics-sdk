@@ -8,6 +8,10 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.kevindupas.networkmetrics.measurement.DeviceMeasurement
+import com.kevindupas.networkmetrics.measurement.RadioMeasurement
+import com.kevindupas.networkmetrics.model.DeviceResult
+import com.kevindupas.networkmetrics.model.RadioResult
 import com.kevindupas.networkmetrics.service.NetworkMetricsWorker
 import java.util.concurrent.TimeUnit
 
@@ -75,6 +79,16 @@ object NetworkMetricsSdk {
         Log.d(TAG, "One-shot measurement enqueued")
     }
 
+    /**
+     * Synchronous snapshot — Radio + Device only. Fast (<100ms, no I/O).
+     * Use to populate operator/signal info at app launch, before running full measureNow().
+     */
+    fun getRadioSnapshot(context: Context): RadioSnapshot {
+        val radio = try { RadioMeasurement(context).measure() } catch (_: Exception) { null }
+        val device = try { DeviceMeasurement(context).measure() } catch (_: Exception) { null }
+        return RadioSnapshot(radio, device)
+    }
+
     fun getLastResult(context: Context): String? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return prefs.getString(PREF_LAST_RESULT, null)
@@ -92,6 +106,11 @@ object NetworkMetricsSdk {
 
     fun isInitialised(): Boolean = config != null
 }
+
+data class RadioSnapshot(
+    val radio: RadioResult?,
+    val device: DeviceResult?,
+)
 
 internal object ConfigHolder {
     var config: NetworkMetricsConfig? = null
