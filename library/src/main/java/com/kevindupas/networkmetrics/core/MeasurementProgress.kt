@@ -1,14 +1,18 @@
 package com.kevindupas.networkmetrics.core
 
 /**
- * Emitted after each measurement phase completes.
- * result contains the phase JSON (null if phase was skipped or failed).
+ * Emitted during and after each measurement phase.
+ * result contains phase-specific payload:
+ *  - SPEED_DOWNLOAD_PROGRESS / SPEED_UPLOAD_PROGRESS → current Mbps (Double)
+ *  - End-of-phase events → phase JSON (or null if skipped/failed)
  */
 data class MeasurementProgress(
     val phase: Phase,
     val result: Any?,
 ) {
     enum class Phase {
+        SPEED_DOWNLOAD_PROGRESS,
+        SPEED_UPLOAD_PROGRESS,
         SPEED,
         PACKET_LOSS,
         STREAMING,

@@ -16,13 +16,16 @@ import kotlin.math.max
 private const val TAG = "SpeedMeasurement"
 private const val CF_BASE = "https://speed.cloudflare.com"
 private const val PING_COUNT = 8
-private const val DL_CHUNK_BYTES = 1 * 1024 * 1024  // 1 MB per request (3G-friendly)
-private const val UL_CHUNK_BYTES = 256 * 1024        // 256 KB per request (3G-friendly)
+private const val DL_CHUNK_BYTES = 1 * 1024 * 1024
+private const val UL_CHUNK_BYTES = 256 * 1024
+private const val PROGRESS_INTERVAL_MS = 400L
 
 internal class SpeedMeasurement(
     private val downloadDurationMs: Long = 8_000L,
     private val uploadDurationMs: Long = 6_000L,
     private val threadCount: Int = 3,
+    private val onDownloadProgress: ((Double) -> Unit)? = null,
+    private val onUploadProgress: ((Double) -> Unit)? = null,
 ) {
 
     private val client = OkHttpClient.Builder()
@@ -64,7 +67,6 @@ internal class SpeedMeasurement(
         }
     }
 
-    // Single pass for both latency + jitter to save time
     private fun measureLatencyAndJitter(): Pair<Double, Double> {
         val pings = mutableListOf<Long>()
         repeat(PING_COUNT) {
@@ -83,11 +85,29 @@ internal class SpeedMeasurement(
         return Pair(latency, jitter)
     }
 
-    // Duration-based download: THREAD_COUNT streams each loop 1MB chunks for DOWNLOAD_DURATION_MS
     private fun measureDownload(): Double {
         val totalBytes = AtomicLong(0)
-        val deadline = System.currentTimeMillis() + downloadDurationMs
         val startTime = System.currentTimeMillis()
+        val deadline = startTime + downloadDurationMs
+
+        // Progress-emitter thread — samples throughput every PROGRESS_INTERVAL_MS
+        val progressThread = onDownloadProgress?.let { cb ->
+            Thread {
+                var lastBytes = 0L
+                var lastTime = startTime
+                while (System.currentTimeMillis() < deadline) {
+                    try { Thread.sleep(PROGRESS_INTERVAL_MS) } catch (_: InterruptedException) { break }
+                    val now = System.currentTimeMillis()
+                    val bytes = totalBytes.get()
+                    val deltaBytes = bytes - lastBytes
+                    val deltaMs = max(now - lastTime, 1L)
+                    val instMbps = deltaBytes * 8.0 / deltaMs / 1000.0
+                    try { cb(instMbps) } catch (_: Exception) {}
+                    lastBytes = bytes
+                    lastTime = now
+                }
+            }.also { it.start() }
+        }
 
         val threads = (1..threadCount).map {
             Thread {
@@ -98,7 +118,6 @@ internal class SpeedMeasurement(
                                 .url("$CF_BASE/__down?bytes=$DL_CHUNK_BYTES")
                                 .build()
                         ).execute().use { resp ->
-                            // Stream body to avoid holding entire chunk in memory
                             val source = resp.body?.source() ?: return@use
                             val buf = ByteArray(8192)
                             var read: Int
@@ -115,16 +134,35 @@ internal class SpeedMeasurement(
         }
 
         threads.forEach { it.join(downloadDurationMs + 3000) }
+        progressThread?.interrupt()
+        progressThread?.join(500)
         val elapsed = max(System.currentTimeMillis() - startTime, 1L)
-        return totalBytes.get() * 8.0 / elapsed / 1000.0 // Mbps
+        return totalBytes.get() * 8.0 / elapsed / 1000.0
     }
 
-    // Duration-based upload: THREAD_COUNT streams each loop 256KB chunks for UPLOAD_DURATION_MS
     private fun measureUpload(): Double {
         val payload = ByteArray(UL_CHUNK_BYTES) { (it % 256).toByte() }
         val totalBytes = AtomicLong(0)
-        val deadline = System.currentTimeMillis() + uploadDurationMs
         val startTime = System.currentTimeMillis()
+        val deadline = startTime + uploadDurationMs
+
+        val progressThread = onUploadProgress?.let { cb ->
+            Thread {
+                var lastBytes = 0L
+                var lastTime = startTime
+                while (System.currentTimeMillis() < deadline) {
+                    try { Thread.sleep(PROGRESS_INTERVAL_MS) } catch (_: InterruptedException) { break }
+                    val now = System.currentTimeMillis()
+                    val bytes = totalBytes.get()
+                    val deltaBytes = bytes - lastBytes
+                    val deltaMs = max(now - lastTime, 1L)
+                    val instMbps = deltaBytes * 8.0 / deltaMs / 1000.0
+                    try { cb(instMbps) } catch (_: Exception) {}
+                    lastBytes = bytes
+                    lastTime = now
+                }
+            }.also { it.start() }
+        }
 
         val threads = (1..threadCount).map {
             Thread {
@@ -148,8 +186,10 @@ internal class SpeedMeasurement(
         }
 
         threads.forEach { it.join(uploadDurationMs + 3000) }
+        progressThread?.interrupt()
+        progressThread?.join(500)
         val elapsed = max(System.currentTimeMillis() - startTime, 1L)
-        return totalBytes.get() * 8.0 / elapsed / 1000.0 // Mbps
+        return totalBytes.get() * 8.0 / elapsed / 1000.0
     }
 
     private fun measureLoadedLatency(): Double? {
