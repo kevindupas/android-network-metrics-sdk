@@ -37,9 +37,15 @@ internal class RadioMeasurement(private val context: Context) {
         val signalLevel = signalStrengthLabel(tm.signalStrength)
         val networkGen = detectNetworkGeneration(tm)
         val isRoaming = try { tm.isNetworkRoaming } catch (_: Exception) { false }
-        val isVoLte = try { tm.isVoLteAvailable } catch (_: Exception) { false }
+        val isVoLte = try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                tm.javaClass.getMethod("isVoLteEnabled").invoke(tm) as? Boolean ?: false
+            } else {
+                tm.javaClass.getMethod("isVolteEnabled").invoke(tm) as? Boolean ?: false
+            }
+        } catch (_: Exception) { false }
         val isVoNr = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            try { tm.isVoNrAvailable } catch (_: Exception) { false }
+            try { tm.javaClass.getMethod("isVoNrEnabled").invoke(tm) as? Boolean ?: false } catch (_: Exception) { false }
         } else false
 
         if (!hasPermissions()) {
