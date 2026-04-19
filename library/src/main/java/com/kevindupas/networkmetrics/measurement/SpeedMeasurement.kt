@@ -49,14 +49,12 @@ internal class SpeedMeasurement(
             Log.d(TAG, "Latency: ${latencyMs}ms  Jitter: ${jitterMs}ms")
 
             Log.d(TAG, "Starting download (${downloadDurationMs}ms window, ${threadCount} threads)...")
-            val downloadMbps = measureDownload()
-            Log.d(TAG, "Download: ${String.format("%.2f", downloadMbps)} Mbps")
+            val (downloadMbps, loadedLatency) = measureDownload()
+            Log.d(TAG, "Download: ${String.format("%.2f", downloadMbps)} Mbps  Loaded latency: ${loadedLatency}ms")
 
             Log.d(TAG, "Starting upload (${uploadDurationMs}ms window)...")
             val uploadMbps = measureUpload()
             Log.d(TAG, "Upload: ${String.format("%.2f", uploadMbps)} Mbps")
-
-            val loadedLatency = measureLoadedLatency()
             val colo = fetchColoLocation()
 
             SpeedResult(
@@ -105,12 +103,30 @@ internal class SpeedMeasurement(
         return Pair(mean, jitter)
     }
 
-    private fun measureDownload(): Double {
+    private fun measureDownload(): Pair<Double, Double?> {
         val totalBytes = AtomicLong(0)
         val steadyBytes = AtomicLong(0) // bytes counted after warmup (TCP slow-start excluded)
         val startTime = System.currentTimeMillis()
         val warmupEnd = startTime + 2_000L // skip first 2s for slow-start ramp
         val deadline = startTime + downloadDurationMs
+        val loadedPings = mutableListOf<Long>()
+
+        // Ping every ~500ms during steady-state → true loaded latency under load (bufferbloat).
+        val loadedPingThread = Thread {
+            while (System.currentTimeMillis() < deadline) {
+                try { Thread.sleep(500) } catch (_: InterruptedException) { break }
+                if (System.currentTimeMillis() < warmupEnd) continue
+                val t0 = System.nanoTime()
+                try {
+                    client.newCall(
+                        Request.Builder().url("$CF_BASE/__down?bytes=0").build()
+                    ).execute().use { it.body?.bytes() }
+                    synchronized(loadedPings) {
+                        loadedPings.add((System.nanoTime() - t0) / 1_000_000L)
+                    }
+                } catch (_: Exception) {}
+            }
+        }.also { it.start() }
 
         val progressThread = onDownloadProgress?.let { cb ->
             Thread {
@@ -159,15 +175,29 @@ internal class SpeedMeasurement(
         threads.forEach { it.join(downloadDurationMs + 3000) }
         progressThread?.interrupt()
         progressThread?.join(500)
+        loadedPingThread.interrupt()
+        loadedPingThread.join(500)
+
+        val loadedLatency = synchronized(loadedPings) {
+            if (loadedPings.size < 2) null
+            else {
+                val sorted = loadedPings.sorted()
+                // Trim 25% worst spikes, mean of remainder (common bufferbloat methodology).
+                val trim = (sorted.size * 0.25).toInt().coerceAtLeast(1)
+                sorted.dropLast(trim).average()
+            }
+        }
+
         val steadyElapsed = max(System.currentTimeMillis() - warmupEnd, 1L)
         val steady = steadyBytes.get()
         // Fall back to full-window average if warmup never finished (short test).
-        return if (steady > 0 && System.currentTimeMillis() > warmupEnd) {
+        val mbps = if (steady > 0 && System.currentTimeMillis() > warmupEnd) {
             steady * 8.0 / steadyElapsed / 1000.0
         } else {
             val elapsed = max(System.currentTimeMillis() - startTime, 1L)
             totalBytes.get() * 8.0 / elapsed / 1000.0
         }
+        return Pair(mbps, loadedLatency)
     }
 
     private fun measureUpload(): Double {
@@ -230,16 +260,6 @@ internal class SpeedMeasurement(
             val elapsed = max(System.currentTimeMillis() - startTime, 1L)
             totalBytes.get() * 8.0 / elapsed / 1000.0
         }
-    }
-
-    private fun measureLoadedLatency(): Double? {
-        return try {
-            val start = System.currentTimeMillis()
-            client.newCall(
-                Request.Builder().url("$CF_BASE/__down?bytes=102400").build()
-            ).execute().use {}
-            (System.currentTimeMillis() - start).toDouble()
-        } catch (_: Exception) { null }
     }
 
     private fun fetchColoLocation(): String? {
