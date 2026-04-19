@@ -118,8 +118,14 @@ internal class NetworkMetricsWorker(
                 QualityScoresCalculator.calculate(it.downloadMbps, it.latencyMs, it.jitterMs, loss)
             }
 
+            val deviceId = android.provider.Settings.Secure.getString(
+                appContext.contentResolver,
+                android.provider.Settings.Secure.ANDROID_ID
+            ) ?: "unknown"
+
             val record = NetworkMetricsRecord(
                 testId = UUID.randomUUID().toString(),
+                deviceId = deviceId,
                 timestamp = iso8601(),
                 sdkVersion = "1.0.0",
                 speed = speed,
@@ -191,6 +197,7 @@ internal class NetworkMetricsWorker(
 
     private fun recordToJson(r: NetworkMetricsRecord): JSONObject = JSONObject().apply {
         put("testId", r.testId)
+        put("deviceId", r.deviceId)
         put("timestamp", r.timestamp)
         put("sdkVersion", r.sdkVersion)
         put("speed", r.speed?.let { s -> JSONObject().apply {

@@ -6,6 +6,7 @@ package com.kevindupas.networkmetrics.model
  */
 data class NetworkMetricsRecord(
     val testId: String,
+    val deviceId: String,
     val timestamp: String,
     val sdkVersion: String,
     val speed: SpeedResult?,
