@@ -8,8 +8,10 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.Debug
 import android.os.PowerManager
+import android.provider.Settings
 import android.telephony.TelephonyManager
 import com.kevindupas.networkmetrics.model.DeviceResult
+import java.util.Locale
 
 internal class DeviceMeasurement(private val context: Context) {
 
@@ -67,11 +69,28 @@ internal class DeviceMeasurement(private val context: Context) {
             }
         } else null
 
+        val uuid = try {
+            Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+        } catch (_: Exception) { null }
+
+        val lang = Locale.getDefault().toLanguageTag()
+
+        val isVirtual = Build.FINGERPRINT.contains("generic")
+            || Build.MODEL.contains("Emulator")
+            || Build.MODEL.contains("Android SDK")
+            || Build.HARDWARE.contains("goldfish")
+            || Build.HARDWARE.contains("ranchu")
+
         return DeviceResult(
             manufacturer = Build.MANUFACTURER,
             model = Build.MODEL,
             osVersion = Build.VERSION.RELEASE,
             sdkInt = Build.VERSION.SDK_INT,
+            platform = "android",
+            operatingSystem = "android",
+            lang = lang,
+            uuid = uuid,
+            isVirtual = isVirtual,
             simOperatorName = simOperatorName,
             mcc = mcc,
             mnc = mnc,

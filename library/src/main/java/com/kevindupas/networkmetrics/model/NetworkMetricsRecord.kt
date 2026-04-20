@@ -109,6 +109,11 @@ data class DeviceResult(
     val model: String,
     val osVersion: String,
     val sdkInt: Int,
+    val platform: String,
+    val operatingSystem: String,
+    val lang: String?,
+    val uuid: String?,
+    val isVirtual: Boolean,
     val simOperatorName: String?,
     val mcc: String?,
     val mnc: String?,
@@ -116,7 +121,7 @@ data class DeviceResult(
     val isCharging: Boolean?,
     val ramUsedMb: Int?,
     val cpuLoadPercent: Double?,
-    val thermalStatus: String?, // NONE | LIGHT | MODERATE | SEVERE | CRITICAL | EMERGENCY | SHUTDOWN
+    val thermalStatus: String?,
 )
 
 data class QualityScores(
