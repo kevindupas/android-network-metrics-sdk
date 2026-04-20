@@ -71,7 +71,7 @@ internal class WebBrowsingMeasurement(private val targets: List<WebTarget>) {
         private var dnsStart = 0L
         private var connectStart = 0L
         private var tlsStart = 0L
-        private var responseStart = 0L
+        private var requestHeadersEndAt = 0L
 
         var dnsMs: Long? = null
         var tcpMs: Long? = null
@@ -92,9 +92,11 @@ internal class WebBrowsingMeasurement(private val targets: List<WebTarget>) {
         override fun connectEnd(call: Call, inetSocketAddress: InetSocketAddress, proxy: Proxy, protocol: okhttp3.Protocol?) {
             tcpMs = now() - connectStart - (tlsMs ?: 0L)
         }
-        override fun responseHeadersStart(call: Call) { responseStart = now() }
-        override fun responseHeadersEnd(call: Call, response: okhttp3.Response) {
-            ttfbMs = now() - responseStart
+        override fun requestHeadersEnd(call: Call, request: okhttp3.Request) {
+            requestHeadersEndAt = now()
+        }
+        override fun responseHeadersStart(call: Call) {
+            if (requestHeadersEndAt > 0L) ttfbMs = now() - requestHeadersEndAt
         }
         override fun connectFailed(call: Call, inetSocketAddress: InetSocketAddress, proxy: Proxy, protocol: okhttp3.Protocol?, ioe: IOException) {
             tcpMs = now() - connectStart
