@@ -17,15 +17,20 @@ import android.telephony.CellSignalStrengthNr
 import android.telephony.SignalStrength
 import android.telephony.TelephonyCallback
 import android.telephony.TelephonyDisplayInfo
+import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import androidx.annotation.RequiresApi
+import com.kevindupas.networkmetrics.model.RadioPerSimResult
 import com.kevindupas.networkmetrics.model.RadioResult
 
 internal class RadioMeasurement(private val context: Context) {
 
     @SuppressLint("MissingPermission")
-    fun measure(): RadioResult {
-        val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+    fun measure(): RadioResult =
+        measure(context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager)
+
+    @SuppressLint("MissingPermission")
+    fun measure(tm: TelephonyManager): RadioResult {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
         val connectionType = when {
@@ -83,6 +88,9 @@ internal class RadioMeasurement(private val context: Context) {
                     val id: CellIdentityLte = cell.cellIdentity
                     val bw = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
                         id.bandwidth.takeUnless { it == CellInfo.UNAVAILABLE } else null
+                    val ta = sig.timingAdvance.takeUnless {
+                        it == CellInfo.UNAVAILABLE || it == Integer.MAX_VALUE
+                    }
                     return RadioResult(
                         rsrp = sig.rsrp.takeUnless { it == CellInfo.UNAVAILABLE },
                         rsrq = sig.rsrq.takeUnless { it == CellInfo.UNAVAILABLE },
@@ -96,6 +104,7 @@ internal class RadioMeasurement(private val context: Context) {
                         earfcn = id.earfcn.takeUnless { it == CellInfo.UNAVAILABLE },
                         bandwidth = bw,
                         psc = null,
+                        timingAdvance = ta,
                         isNrAvailable = isNr,
                         isVoLteAvailable = isVoLte,
                         isVoNrAvailable = isVoNr,
@@ -122,6 +131,7 @@ internal class RadioMeasurement(private val context: Context) {
                         earfcn = id.nrarfcn.takeUnless { it == CellInfo.UNAVAILABLE },
                         bandwidth = null,
                         psc = null,
+                        timingAdvance = null,
                         isNrAvailable = true,
                         isVoLteAvailable = isVoLte,
                         isVoNrAvailable = isVoNr,
@@ -145,6 +155,7 @@ internal class RadioMeasurement(private val context: Context) {
                         earfcn = id.uarfcn.takeUnless { it == CellInfo.UNAVAILABLE },
                         bandwidth = null,
                         psc = id.psc.takeUnless { it == CellInfo.UNAVAILABLE },
+                        timingAdvance = null,
                         isNrAvailable = false,
                         isVoLteAvailable = isVoLte,
                         isVoNrAvailable = isVoNr,
@@ -168,6 +179,7 @@ internal class RadioMeasurement(private val context: Context) {
                         earfcn = id.arfcn.takeUnless { it == CellInfo.UNAVAILABLE },
                         bandwidth = null,
                         psc = null,
+                        timingAdvance = null,
                         isNrAvailable = false,
                         isVoLteAvailable = isVoLte,
                         isVoNrAvailable = isVoNr,
@@ -192,6 +204,7 @@ internal class RadioMeasurement(private val context: Context) {
         rsrp = null, rsrq = null, sinr = null, rssi = null, cqi = null,
         ci = null, pci = null, tac = null, lac = null,
         earfcn = null, bandwidth = null, psc = null,
+        timingAdvance = null,
         isNrAvailable = isNr,
         isVoLteAvailable = isVoLte,
         isVoNrAvailable = isVoNr,
@@ -258,6 +271,27 @@ internal class RadioMeasurement(private val context: Context) {
         return when (ss.level) {
             0 -> "NONE"; 1 -> "POOR"; 2 -> "MODERATE"; 3 -> "GOOD"; 4 -> "GREAT"
             else -> "UNKNOWN"
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun measurePerSim(): List<RadioPerSimResult> {
+        if (!hasPermissions()) return emptyList()
+        val sm = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as? SubscriptionManager
+            ?: return emptyList()
+        val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+        val subs = try { sm.activeSubscriptionInfoList } catch (_: SecurityException) { null } ?: return emptyList()
+        return subs.mapNotNull { info ->
+            val subId = info.subscriptionId
+            val perSimTm = try { tm.createForSubscriptionId(subId) } catch (_: Exception) { null } ?: return@mapNotNull null
+            val radio = try { measure(perSimTm) } catch (_: Exception) { null }
+            val carrier = info.carrierName?.toString() ?: info.displayName?.toString()
+            RadioPerSimResult(
+                subscriptionId = subId,
+                slotIndex = info.simSlotIndex,
+                carrierName = carrier,
+                radio = radio,
+            )
         }
     }
 

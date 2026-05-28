@@ -14,6 +14,7 @@ data class NetworkMetricsRecord(
     val streaming: StreamingResult?,
     val socialLatency: List<SocialLatencyResult>,
     val radio: RadioResult?,
+    val radioPerSim: List<RadioPerSimResult>,
     val network: NetworkResult,
     val geo: GeoResult?,
     val device: DeviceResult,
@@ -70,6 +71,9 @@ data class RadioResult(
     val earfcn: Int?,    // LTE EARFCN / NR NR-ARFCN / WCDMA UARFCN
     val bandwidth: Int?, // LTE channel bandwidth in kHz (e.g. 20000 = 20 MHz)
     val psc: Int?,       // WCDMA Primary Scrambling Code
+    // LTE Timing Advance (servant cell only). Raw units as reported by Android.
+    // Distance ≈ TA × 78.07 m — left to consumers; SDK exposes raw value only.
+    val timingAdvance: Int?,
     val isNrAvailable: Boolean,
     val isVoLteAvailable: Boolean,
     val isVoNrAvailable: Boolean,
@@ -78,6 +82,13 @@ data class RadioResult(
     val networkGeneration: String,
     val signalStrengthLevel: String,
     val technology: String,
+)
+
+data class RadioPerSimResult(
+    val subscriptionId: Int,
+    val slotIndex: Int,
+    val carrierName: String?,
+    val radio: RadioResult?,
 )
 
 data class NetworkResult(

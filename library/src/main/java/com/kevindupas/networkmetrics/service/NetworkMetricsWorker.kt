@@ -43,7 +43,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 
 private const val TAG = "NetworkMetricsWorker"
-private const val SDK_VERSION = "1.0.19"
+private const val SDK_VERSION = "1.0.20"
 
 internal class NetworkMetricsWorker(
     private val appContext: Context,
@@ -139,8 +139,10 @@ internal class NetworkMetricsWorker(
                 emptyList()
             }
 
-            val radio = RadioMeasurement(appContext).measure()
+            val radioMeasurement = RadioMeasurement(appContext)
+            val radio = radioMeasurement.measure()
                 .also { emit(MeasurementProgress.Phase.RADIO, it) }
+            val radioPerSim = try { radioMeasurement.measurePerSim() } catch (_: Exception) { emptyList() }
 
             val neighboring = if (config.enableNeighboringCells && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
                 NeighboringCellsMeasurement(appContext).measure()
@@ -173,6 +175,7 @@ internal class NetworkMetricsWorker(
                 streaming       = streaming,
                 socialLatency   = social,
                 radio           = radio,
+                radioPerSim     = radioPerSim,
                 network         = network,
                 geo             = geo,
                 device          = device,
@@ -261,18 +264,13 @@ internal class NetworkMetricsWorker(
         put("socialLatency", JSONArray(r.socialLatency.map { sl -> JSONObject().apply {
             put("service", sl.service); put("ttfbMs", sl.ttfbMs); put("reachable", sl.reachable)
         }}))
-        put("radio", r.radio?.let { ra -> JSONObject().apply {
-            put("rsrp", ra.rsrp); put("rsrq", ra.rsrq); put("sinr", ra.sinr); put("rssi", ra.rssi)
-            put("cqi", ra.cqi); put("ci", ra.ci); put("pci", ra.pci)
-            put("tac", ra.tac); put("lac", ra.lac); put("earfcn", ra.earfcn)
-            put("bandwidth", ra.bandwidth); put("psc", ra.psc)
-            put("isNrAvailable", ra.isNrAvailable)
-            put("isVoLteAvailable", ra.isVoLteAvailable); put("isVoNrAvailable", ra.isVoNrAvailable)
-            put("isRoaming", ra.isRoaming)
-            put("nrMode", ra.nrMode)
-            put("networkGeneration", ra.networkGeneration)
-            put("signalStrengthLevel", ra.signalStrengthLevel); put("technology", ra.technology)
-        }})
+        put("radio", r.radio?.let { radioToJson(it) })
+        put("radioPerSim", JSONArray(r.radioPerSim.map { ps -> JSONObject().apply {
+            put("subscriptionId", ps.subscriptionId)
+            put("slotIndex", ps.slotIndex)
+            put("carrierName", ps.carrierName)
+            put("radio", ps.radio?.let { radioToJson(it) })
+        }}))
         put("network", JSONObject().apply {
             put("connectionType", r.network.connectionType); put("ip", r.network.ip)
             put("asn", r.network.asn); put("isp", r.network.isp)
@@ -318,6 +316,20 @@ internal class NetworkMetricsWorker(
             put("tac", nc.tac); put("lac", nc.lac); put("earfcn", nc.earfcn)
             put("isRegistered", nc.isRegistered)
         }}))
+    }
+
+    private fun radioToJson(ra: com.kevindupas.networkmetrics.model.RadioResult): JSONObject = JSONObject().apply {
+        put("rsrp", ra.rsrp); put("rsrq", ra.rsrq); put("sinr", ra.sinr); put("rssi", ra.rssi)
+        put("cqi", ra.cqi); put("ci", ra.ci); put("pci", ra.pci)
+        put("tac", ra.tac); put("lac", ra.lac); put("earfcn", ra.earfcn)
+        put("bandwidth", ra.bandwidth); put("psc", ra.psc)
+        put("timingAdvance", ra.timingAdvance)
+        put("isNrAvailable", ra.isNrAvailable)
+        put("isVoLteAvailable", ra.isVoLteAvailable); put("isVoNrAvailable", ra.isVoNrAvailable)
+        put("isRoaming", ra.isRoaming)
+        put("nrMode", ra.nrMode)
+        put("networkGeneration", ra.networkGeneration)
+        put("signalStrengthLevel", ra.signalStrengthLevel); put("technology", ra.technology)
     }
 
     private fun iso8601(): String =

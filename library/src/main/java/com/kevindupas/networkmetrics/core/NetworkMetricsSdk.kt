@@ -93,9 +93,11 @@ object NetworkMetricsSdk {
      * Use to populate operator/signal info at app launch, before running full measureNow().
      */
     fun getRadioSnapshot(context: Context): RadioSnapshot {
-        val radio = try { RadioMeasurement(context).measure() } catch (_: Exception) { null }
+        val rm = RadioMeasurement(context)
+        val radio = try { rm.measure() } catch (_: Exception) { null }
+        val perSim = try { rm.measurePerSim() } catch (_: Exception) { emptyList() }
         val device = try { DeviceMeasurement(context).measure() } catch (_: Exception) { null }
-        return RadioSnapshot(radio, device)
+        return RadioSnapshot(radio, device, perSim)
     }
 
     fun getLastResult(context: Context): String? {
@@ -119,6 +121,7 @@ object NetworkMetricsSdk {
 data class RadioSnapshot(
     val radio: RadioResult?,
     val device: DeviceResult?,
+    val radioPerSim: List<com.kevindupas.networkmetrics.model.RadioPerSimResult> = emptyList(),
 )
 
 internal object ConfigHolder {

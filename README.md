@@ -611,6 +611,11 @@ Carriers using CGNAT (common on African mobile networks) block UDP on non-standa
 
 ## Changelog
 
+### v1.0.20 (May 2026)
+- LTE Timing Advance — `RadioResult.timingAdvance` (raw units, `null` when unavailable / `Integer.MAX_VALUE` / `CellInfo.UNAVAILABLE`; servant cell LTE only, `null` for NR/WCDMA/GSM). Distance ≈ TA × 78.07 m, conversion left to consumers
+- Dual-SIM — new `RadioMeasurement.measurePerSim()` enumerates active subscriptions via `SubscriptionManager`, returns `List<RadioPerSimResult>` (`subscriptionId`, `slotIndex`, `carrierName`, radio block per SIM). Cycle payload gains `radioPerSim[]` next to the existing `radio` (preserved for the default data SIM)
+- `RadioSnapshot` gains `radioPerSim`
+
 ### v1.0.10 (April 2026)
 - `measureNow()` — on-demand one-shot measurement via WorkManager
 - `getLastResult()` / `getLastResultTimestamp()` — read last result from SharedPreferences
