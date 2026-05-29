@@ -100,6 +100,22 @@ object NetworkMetricsSdk {
         return RadioSnapshot(radio, device, perSim)
     }
 
+    private val gnssMeasurement = mutableMapOf<Int, com.kevindupas.networkmetrics.measurement.GnssMeasurement>()
+
+    /**
+     * Snapshot of GNSS satellites currently visible (GPS / GLONASS / Galileo / BeiDou / …).
+     *
+     * Registers a passive [android.location.GnssStatus.Callback] on first call and reuses it.
+     * Requires `ACCESS_FINE_LOCATION` at runtime; returns an empty snapshot otherwise.
+     */
+    fun getGnssSatellites(context: Context): com.kevindupas.networkmetrics.model.GnssSnapshot {
+        val key = context.applicationContext.hashCode()
+        val gm = gnssMeasurement.getOrPut(key) {
+            com.kevindupas.networkmetrics.measurement.GnssMeasurement(context.applicationContext)
+        }
+        return gm.snapshot()
+    }
+
     fun getLastResult(context: Context): String? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return prefs.getString(PREF_LAST_RESULT, null)

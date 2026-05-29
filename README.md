@@ -23,6 +23,7 @@ Android SDK for **continuous, passive mobile network quality measurement**. Runs
 | **Web Browsing** | Per-target: DNS time, TCP connect time, TLS handshake time, TTFB, HTTP status |
 | **Network Context** | ISP, ASN, IP address, Cloudflare PoP, IP version (IPv4/IPv6/dual) |
 | **Location** | GPS lat/lon, accuracy, altitude, speed, bearing (FusedLocationProvider) |
+| **GNSS** | Per-satellite SVID, constellation (GPS/GLO/GAL/BDS/QZS/SBAS/IRN), azimuth, elevation, C/N0 (dB-Hz), `usedInFix` — passive snapshot via `getGnssSatellites()` |
 | **Device** | Manufacturer, model, OS version, SIM operator, MCC/MNC, battery, RAM, CPU load, thermal state |
 | **Quality Scores** | Streaming / Gaming / RTC quality (0–100, Poor/Core/Excellent) |
 | **MOS** | Mean Opinion Score — ITU-T G.107 voice quality estimate |
