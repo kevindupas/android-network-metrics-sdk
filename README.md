@@ -19,6 +19,7 @@ Android SDK for **continuous, passive mobile network quality measurement**. Runs
 | **Radio Signal** | RSRP, RSRQ, SINR, RSSI, CQI, CI, PCI, TAC, LAC, EARFCN, bandwidth, PSC |
 | **Radio Context** | Network generation (2G→5G), roaming, 5G mode (NSA vs SA) |
 | **Neighboring Cells** | All visible cells (LTE/NR/WCDMA/GSM) — registered + non-registered |
+| **Neighbor cells (snapshot)** | All visible LTE/NR/WCDMA/GSM cells with `isRegistered`, PCI/CI/TAC, RSRP/RSRQ/SINR, MCC/MNC — `getNeighborCells()` |
 | **DNS** | Resolution time, resolved IPs, success flag |
 | **Web Browsing** | Per-target: DNS time, TCP connect time, TLS handshake time, TTFB, HTTP status |
 | **Network Context** | ISP, ASN, IP address, Cloudflare PoP, IP version (IPv4/IPv6/dual) |

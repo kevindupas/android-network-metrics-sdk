@@ -116,6 +116,22 @@ object NetworkMetricsSdk {
         return gm.snapshot()
     }
 
+    private val neighborCellsMeasurement = mutableMapOf<Int, com.kevindupas.networkmetrics.measurement.NeighborCellsMeasurement>()
+
+    /**
+     * Snapshot of all visible cells (serving + neighbors), per
+     * [android.telephony.TelephonyManager.getAllCellInfo].
+     * Requires ACCESS_FINE_LOCATION + READ_PHONE_STATE at runtime; returns
+     * an empty list otherwise.
+     */
+    fun getNeighborCells(context: Context): List<com.kevindupas.networkmetrics.model.NeighborCell> {
+        val key = context.applicationContext.hashCode()
+        val m = neighborCellsMeasurement.getOrPut(key) {
+            com.kevindupas.networkmetrics.measurement.NeighborCellsMeasurement(context.applicationContext)
+        }
+        return m.snapshot()
+    }
+
     fun getLastResult(context: Context): String? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return prefs.getString(PREF_LAST_RESULT, null)
