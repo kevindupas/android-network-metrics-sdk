@@ -133,6 +133,8 @@ internal class SpeedMeasurement(
             Thread {
                 var lastBytes = 0L
                 var lastTime = startTime
+                var smoothed = 0.0
+                val alpha = 0.25 // EMA factor — lower = smoother
                 while (System.currentTimeMillis() < deadline) {
                     try { Thread.sleep(PROGRESS_INTERVAL_MS) } catch (_: InterruptedException) { break }
                     val now = System.currentTimeMillis()
@@ -140,7 +142,8 @@ internal class SpeedMeasurement(
                     val deltaBytes = bytes - lastBytes
                     val deltaMs = max(now - lastTime, 1L)
                     val instMbps = deltaBytes * 8.0 / deltaMs / 1000.0
-                    try { cb(instMbps) } catch (_: Exception) {}
+                    smoothed = if (smoothed == 0.0) instMbps else alpha * instMbps + (1.0 - alpha) * smoothed
+                    try { cb(smoothed) } catch (_: Exception) {}
                     lastBytes = bytes
                     lastTime = now
                 }
@@ -215,6 +218,8 @@ internal class SpeedMeasurement(
             Thread {
                 var lastBytes = 0L
                 var lastTime = startTime
+                var smoothed = 0.0
+                val alpha = 0.25
                 while (System.currentTimeMillis() < deadline) {
                     try { Thread.sleep(PROGRESS_INTERVAL_MS) } catch (_: InterruptedException) { break }
                     val now = System.currentTimeMillis()
@@ -222,7 +227,8 @@ internal class SpeedMeasurement(
                     val deltaBytes = bytes - lastBytes
                     val deltaMs = max(now - lastTime, 1L)
                     val instMbps = deltaBytes * 8.0 / deltaMs / 1000.0
-                    try { cb(instMbps) } catch (_: Exception) {}
+                    smoothed = if (smoothed == 0.0) instMbps else alpha * instMbps + (1.0 - alpha) * smoothed
+                    try { cb(smoothed) } catch (_: Exception) {}
                     lastBytes = bytes
                     lastTime = now
                 }
