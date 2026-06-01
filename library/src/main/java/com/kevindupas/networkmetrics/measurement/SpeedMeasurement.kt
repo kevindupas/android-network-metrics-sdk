@@ -19,7 +19,7 @@ private const val TAG = "SpeedMeasurement"
 private const val CF_BASE = "https://speed.cloudflare.com"
 private const val PING_COUNT = 12
 private const val PING_WARMUP = 2
-private const val DL_CHUNK_BYTES = 25 * 1024 * 1024
+private const val DL_CHUNK_BYTES = 10 * 1024 * 1024
 private const val UL_CHUNK_BYTES = 1 * 1024 * 1024
 private const val PROGRESS_INTERVAL_MS = 400L
 
@@ -31,14 +31,15 @@ internal class SpeedMeasurement(
     private val onUploadProgress: ((Double) -> Unit)? = null,
 ) {
 
-    // Shared pool + HTTP/2 → connection reuse across pings and parallel download streams.
-    // Without this, every .execute() reopens TCP+TLS → pings balloon on cellular (radio wakeup + handshake).
+    // Shared pool. HTTP/1.1 only: HTTP/2 stream multiplexing causes some carriers (Orange FR 5G NSA
+    // observed) to truncate /__down responses to 0 bytes while upload over the same connection
+    // works fine. Forcing HTTP/1.1 + explicit identity encoding fixes the download path.
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
-        .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
+        .protocols(listOf(Protocol.HTTP_1_1))
         .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
         .build()
 
@@ -153,6 +154,8 @@ internal class SpeedMeasurement(
                         client.newCall(
                             Request.Builder()
                                 .url("$CF_BASE/__down?bytes=$DL_CHUNK_BYTES")
+                                .header("Accept-Encoding", "identity")
+                                .header("Cache-Control", "no-cache")
                                 .build()
                         ).execute().use { resp ->
                             val source = resp.body?.source() ?: return@use
