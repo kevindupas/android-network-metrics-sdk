@@ -16,7 +16,7 @@ import kotlin.math.max
 import kotlin.math.sqrt
 
 private const val TAG = "SpeedMeasurement"
-private const val CF_BASE = "https://speed.cloudflare.com"
+private const val DEFAULT_CF_BASE = "https://speed.cloudflare.com"
 private const val PING_COUNT = 12
 private const val PING_WARMUP = 2
 private const val DL_CHUNK_BYTES = 10 * 1024 * 1024
@@ -29,7 +29,9 @@ internal class SpeedMeasurement(
     private val threadCount: Int = 3,
     private val onDownloadProgress: ((Double) -> Unit)? = null,
     private val onUploadProgress: ((Double) -> Unit)? = null,
+    private val baseUrl: String = DEFAULT_CF_BASE,
 ) {
+    private val CF_BASE: String = baseUrl.trimEnd('/')
 
     // Shared pool. HTTP/1.1 only: HTTP/2 stream multiplexing causes some carriers (Orange FR 5G NSA
     // observed) to truncate /__down responses to 0 bytes while upload over the same connection

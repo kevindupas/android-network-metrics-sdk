@@ -30,6 +30,13 @@ data class NetworkMetricsConfig(
     val speedUploadDurationMs: Long = 6_000L,
     val speedThreadCount: Int = 3,
 
+    /**
+     * Base URL for the speed test endpoints. Default = Cloudflare's public speedtest.
+     * Override with a self-hosted server that exposes `/__down?bytes=N` (streams N bytes)
+     * and `/__up` (accepts POST body) when you need carrier-resilient measurements.
+     */
+    val speedTestBaseUrl: String = "https://speed.cloudflare.com",
+
     // Web browsing targets — override via remoteConfigUrl or set directly
     val webTargets: List<WebTarget> = DEFAULT_WEB_TARGETS,
 
@@ -80,6 +87,7 @@ data class NetworkMetricsConfig(
         private var speedDownloadDurationMs = 8_000L
         private var speedUploadDurationMs = 6_000L
         private var speedThreadCount = 3
+        private var speedTestBaseUrl = "https://speed.cloudflare.com"
         private var webTargets: List<WebTarget> = DEFAULT_WEB_TARGETS
         private var socialTargets: List<SocialTarget> = DEFAULT_SOCIAL_TARGETS
         private var streamingUrl: String? = null
@@ -100,6 +108,7 @@ data class NetworkMetricsConfig(
         fun speedDownloadDurationMs(v: Long)     = apply { speedDownloadDurationMs = v }
         fun speedUploadDurationMs(v: Long)       = apply { speedUploadDurationMs = v }
         fun speedThreadCount(v: Int)             = apply { speedThreadCount = v }
+        fun speedTestBaseUrl(v: String)          = apply { speedTestBaseUrl = v }
         fun webTargets(v: List<WebTarget>)       = apply { webTargets = v }
         fun socialTargets(v: List<SocialTarget>) = apply { socialTargets = v }
         fun streamingUrl(v: String?)             = apply { streamingUrl = v }
@@ -117,6 +126,7 @@ data class NetworkMetricsConfig(
             speedDownloadDurationMs = speedDownloadDurationMs,
             speedUploadDurationMs = speedUploadDurationMs,
             speedThreadCount = speedThreadCount,
+            speedTestBaseUrl = speedTestBaseUrl,
             webTargets = webTargets,
             socialTargets = socialTargets,
             streamingUrl = streamingUrl,

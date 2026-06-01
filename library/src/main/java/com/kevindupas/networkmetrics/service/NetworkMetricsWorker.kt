@@ -97,6 +97,7 @@ internal class NetworkMetricsWorker(
                     threadCount        = config.speedThreadCount,
                     onDownloadProgress = { mbps -> emit(MeasurementProgress.Phase.SPEED_DOWNLOAD_PROGRESS, mbps) },
                     onUploadProgress   = { mbps -> emit(MeasurementProgress.Phase.SPEED_UPLOAD_PROGRESS, mbps) },
+                    baseUrl            = config.speedTestBaseUrl,
                 ).measure().also { emit(MeasurementProgress.Phase.SPEED, it) }
             } else null
 
