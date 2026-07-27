@@ -76,7 +76,7 @@ internal class RadioMeasurement(private val context: Context) {
         isVoNr: Boolean,
     ): RadioResult {
         val cells = try { tm.allCellInfo } catch (_: Exception) { emptyList() }
-        val nrMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) detect5GMode(tm) else null
+        val nrMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) detect5GMode(tm) else null
         val isNr = nrMode != null
 
         for (cell in cells) {
@@ -215,7 +215,9 @@ internal class RadioMeasurement(private val context: Context) {
         technology = tech,
     )
 
-    @RequiresApi(Build.VERSION_CODES.R)
+    // TelephonyCallback is API 31 (S), not R — gating on R crashes with
+    // NoClassDefFoundError on Android 11 devices.
+    @RequiresApi(Build.VERSION_CODES.S)
     private fun detect5GMode(tm: TelephonyManager): String? {
         return try {
             val result = arrayOfNulls<String>(1)
@@ -240,7 +242,7 @@ internal class RadioMeasurement(private val context: Context) {
             synchronized(lock) { lock.wait(600) }
             tm.unregisterTelephonyCallback(cb)
             result[0]
-        } catch (_: Exception) { null }
+        } catch (_: Throwable) { null }
     }
 
     @SuppressLint("MissingPermission")
@@ -251,7 +253,7 @@ internal class RadioMeasurement(private val context: Context) {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.N -> {
                 when (tm.dataNetworkType) {
                     TelephonyManager.NETWORK_TYPE_NR -> "5G"
-                    TelephonyManager.NETWORK_TYPE_LTE -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && detect5GMode(tm) != null) "5G" else "4G"
+                    TelephonyManager.NETWORK_TYPE_LTE -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && detect5GMode(tm) != null) "5G" else "4G"
                     TelephonyManager.NETWORK_TYPE_UMTS,
                     TelephonyManager.NETWORK_TYPE_HSDPA,
                     TelephonyManager.NETWORK_TYPE_HSUPA,

@@ -94,9 +94,11 @@ object NetworkMetricsSdk {
      */
     fun getRadioSnapshot(context: Context): RadioSnapshot {
         val rm = RadioMeasurement(context)
-        val radio = try { rm.measure() } catch (_: Exception) { null }
-        val perSim = try { rm.measurePerSim() } catch (_: Exception) { emptyList() }
-        val device = try { DeviceMeasurement(context).measure() } catch (_: Exception) { null }
+        // Throwable, not Exception: missing-API class loads surface as NoClassDefFoundError
+        // and must not propagate to the Capacitor bridge thread (fatal for the whole app).
+        val radio = try { rm.measure() } catch (_: Throwable) { null }
+        val perSim = try { rm.measurePerSim() } catch (_: Throwable) { emptyList() }
+        val device = try { DeviceMeasurement(context).measure() } catch (_: Throwable) { null }
         return RadioSnapshot(radio, device, perSim)
     }
 
