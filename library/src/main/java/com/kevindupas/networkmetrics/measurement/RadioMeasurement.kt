@@ -283,6 +283,13 @@ internal class RadioMeasurement(private val context: Context) {
             ?: return emptyList()
         val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
         val subs = try { sm.activeSubscriptionInfoList } catch (_: SecurityException) { null } ?: return emptyList()
+
+        // Resolved once per sweep: the data subscription can change mid-session when the
+        // user switches SIMs, and every slot has to be labelled against the same snapshot.
+        val defaultDataSubId = try {
+            SubscriptionManager.getDefaultDataSubscriptionId()
+        } catch (_: Throwable) { SubscriptionManager.INVALID_SUBSCRIPTION_ID }
+
         return subs.mapNotNull { info ->
             val subId = info.subscriptionId
             val perSimTm = try { tm.createForSubscriptionId(subId) } catch (_: Exception) { null } ?: return@mapNotNull null
@@ -292,10 +299,26 @@ internal class RadioMeasurement(private val context: Context) {
                 subscriptionId = subId,
                 slotIndex = info.simSlotIndex,
                 carrierName = carrier,
+                mcc = simMcc(info),
+                mnc = simMnc(info),
+                isDefaultData = subId == defaultDataSubId,
                 radio = radio,
             )
         }
     }
+
+    // mccString/mncString are API 29+; below that only the int accessors exist, where 0
+    // means "unknown". The string form is authoritative because it preserves leading
+    // zeros — MNC 01 and MNC 1 are different networks.
+    @Suppress("DEPRECATION")
+    private fun simMcc(info: android.telephony.SubscriptionInfo): String? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) info.mccString
+        else info.mcc.takeIf { it != 0 }?.toString()
+
+    @Suppress("DEPRECATION")
+    private fun simMnc(info: android.telephony.SubscriptionInfo): String? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) info.mncString
+        else info.mnc.takeIf { it != 0 }?.toString()
 
     private fun hasPermissions(): Boolean {
         val loc = context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)

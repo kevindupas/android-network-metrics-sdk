@@ -88,6 +88,15 @@ data class RadioPerSimResult(
     val subscriptionId: Int,
     val slotIndex: Int,
     val carrierName: String?,
+    /** MCC of the subscription's home network, not of the cell it is camped on. */
+    val mcc: String?,
+    val mnc: String?,
+    /**
+     * True for the subscription currently carrying mobile data. Throughput, latency and
+     * MOS are measured over this SIM, so it is the one a consumer should treat as the
+     * reference reading when several SIMs are active.
+     */
+    val isDefaultData: Boolean,
     val radio: RadioResult?,
 )
 

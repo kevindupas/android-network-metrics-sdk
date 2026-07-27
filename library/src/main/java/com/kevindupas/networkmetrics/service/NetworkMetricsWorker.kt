@@ -270,6 +270,9 @@ internal class NetworkMetricsWorker(
             put("subscriptionId", ps.subscriptionId)
             put("slotIndex", ps.slotIndex)
             put("carrierName", ps.carrierName)
+            put("mcc", ps.mcc)
+            put("mnc", ps.mnc)
+            put("isDefaultData", ps.isDefaultData)
             put("radio", ps.radio?.let { radioToJson(it) })
         }}))
         put("network", JSONObject().apply {
