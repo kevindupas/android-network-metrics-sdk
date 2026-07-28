@@ -247,9 +247,13 @@ internal class RadioMeasurement(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     private fun detectNetworkGeneration(tm: TelephonyManager): String {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        // Deliberately NOT short-circuited on Wi-Fi. The radio access technology
+        // and the active data transport are two different facts: a phone camped
+        // on LTE while browsing over Wi-Fi is still measuring an LTE cell, and
+        // reporting "WiFi" here mislabels every sample taken with Wi-Fi on —
+        // which silently corrupts coverage statistics. The transport is already
+        // reported separately as `technology`.
         return when {
-            cm.activeNetworkInfo?.type == ConnectivityManager.TYPE_WIFI -> "WiFi"
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.N -> {
                 when (tm.dataNetworkType) {
                     TelephonyManager.NETWORK_TYPE_NR -> "5G"
